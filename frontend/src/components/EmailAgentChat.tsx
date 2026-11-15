@@ -17,6 +17,7 @@ import {
   User,
 } from "lucide-react";
 import type { ChatMessage, EmailItem, SuggestedDraft } from "@/types";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface EmailAgentChatProps {
   selectedEmail: EmailItem | null;
@@ -277,7 +278,11 @@ export function EmailAgentChat({
                       : "rounded-tl-sm border border-slate-200/90 bg-white text-slate-800"
                   }`}
                 >
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
+                  {isUser ? (
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  ) : (
+                    <MarkdownContent content={msg.content} />
+                  )}
 
                   {!isUser && suggested && (
                     <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3">

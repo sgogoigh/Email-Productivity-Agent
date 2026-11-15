@@ -175,7 +175,7 @@ describe("Email Productivity Agent UI", () => {
         scope: "email",
         email_id: "email-001",
         role: "assistant",
-        content: "Maya asked to meet Thursday at 2 PM.",
+        content: "**Summary:** Maya asked to meet Thursday at 2 PM.\n\n- Confirm `Q4 Roadmap` slot",
         latency_ms: 14.2,
         llm_mode: "mock",
         model_name: "prompt-aware-mock-v1",
@@ -195,7 +195,7 @@ describe("Email Productivity Agent UI", () => {
       scope: "email",
       email_id: "email-001",
       role: "assistant",
-      content: "Maya asked to meet Thursday at 2 PM.",
+      content: "**Summary:** Maya asked to meet Thursday at 2 PM.\n\n- Confirm `Q4 Roadmap` slot",
       latency_ms: 14.2,
       quality_rating: 1,
       metadata: { prompts_used: ["categorization"] },
@@ -211,7 +211,9 @@ describe("Email Productivity Agent UI", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Summarize this email" }));
     await waitFor(() => {
-      expect(screen.getByText("Maya asked to meet Thursday at 2 PM.")).toBeInTheDocument();
+      expect(screen.getByText("Summary:")).toBeInTheDocument();
+      expect(screen.getByText("Summary:").tagName).toBe("STRONG");
+      expect(screen.getByText("Q4 Roadmap").tagName).toBe("CODE");
       expect(screen.getByText("conv-abc123")).toBeInTheDocument();
     });
 

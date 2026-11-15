@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { EmailDetail, EmailItem } from "@/types";
 import { CategoryBadge } from "./CategoryBadge";
+import { MarkdownContent } from "./MarkdownContent";
 
 interface InboxViewerProps {
   emails: EmailItem[];
@@ -454,12 +455,12 @@ export function InboxViewer({
               {selectedDetail.category_reason && (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-indigo-100/90 bg-indigo-50/50 px-3.5 py-2.5 text-xs text-slate-700">
                   <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
-                  <p>
+                  <div className="min-w-0 flex-1 space-y-0.5">
                     <span className="font-semibold text-indigo-950">
                       Prompt Brain Rationale:
-                    </span>{" "}
-                    {selectedDetail.category_reason}
-                  </p>
+                    </span>
+                    <MarkdownContent compact content={selectedDetail.category_reason} />
+                  </div>
                 </div>
               )}
 
