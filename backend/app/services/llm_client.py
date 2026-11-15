@@ -21,7 +21,7 @@ def extract_json_from_text(raw: str) -> Any:
     if fence_match:
         cleaned = fence_match.group(1).strip()
     try:
-        return json.loads(cleaned)
+        return json.loads(cleaned, strict=False)
     except json.JSONDecodeError:
         # Attempt to locate the first JSON object or array substring.
         obj_start = cleaned.find("{")
@@ -32,7 +32,7 @@ def extract_json_from_text(raw: str) -> Any:
             for end in range(len(cleaned), start, -1):
                 snippet = cleaned[start:end].strip()
                 try:
-                    return json.loads(snippet)
+                    return json.loads(snippet, strict=False)
                 except json.JSONDecodeError:
                     continue
         raise LLMServiceError(f"LLM returned invalid JSON: {raw[:200]}")
@@ -545,7 +545,7 @@ class LLMGateway:
             payload = {
                 "systemInstruction": {"parts": [{"text": system_prompt}]},
                 "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-                "generationConfig": {"temperature": 0.2},
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
             }
             if expect_json:
                 payload["generationConfig"]["responseMimeType"] = "application/json"
@@ -706,9 +706,10 @@ class LLMGateway:
 
         system = (
             "You are an intelligent Email Productivity Agent. Always respect the user's stored "
-            "Prompt Brain instructions. Return JSON with keys: content (markdown string), "
+            "Prompt Brain instructions. Return valid JSON with keys: content (markdown string), "
             "referenced_email_ids (array of strings), prompts_used (array of prompt keys), "
-            "suggested_draft (null or {subject, body, suggested_followups})."
+            "suggested_draft (null unless user explicitly asks to draft/write a reply, in which case "
+            "an object with subject, body, suggested_followups)."
         )
         user = (
             f"STORED PROMPTS:\n{prompt_bundle}\n\n"
@@ -717,10 +718,25 @@ class LLMGateway:
             f"USER QUERY:\n{query}"
         )
         raw = await self._call_chat_completion(system, user, expect_json=True)
-        parsed = extract_json_from_text(raw)
+        try:
+            parsed = extract_json_from_text(raw)
+        except LLMServiceError:
+            parsed = {
+                "content": raw.strip(),
+                "referenced_email_ids": [email.id] if email else [],
+                "prompts_used": list(prompts.keys()),
+                "suggested_draft": None,
+            }
+
+        raw_draft = parsed.get("suggested_draft")
+        normalized_draft = (
+            raw_draft
+            if isinstance(raw_draft, dict) and raw_draft.get("subject") and raw_draft.get("body")
+            else None
+        )
         return {
             "content": str(parsed.get("content") or ""),
             "referenced_email_ids": [str(x) for x in (parsed.get("referenced_email_ids") or [])],
             "prompts_used": [str(x) for x in (parsed.get("prompts_used") or list(prompts.keys()))],
-            "suggested_draft": parsed.get("suggested_draft"),
+            "suggested_draft": normalized_draft,
         }
