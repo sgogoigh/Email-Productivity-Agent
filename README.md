@@ -9,12 +9,15 @@ An intelligent, **prompt-driven Email Productivity Agent** with independent **Fa
 ## Architecture & Documentation
 
 - **Master Plan & E2E Checklist:** [docs/PLAN.md](docs/PLAN.md)
+- **Live Production Deployment Plan:** [docs/DEPLOYMENT_PLAN.md](docs/DEPLOYMENT_PLAN.md)
 - **Backend Architecture & API Spec:** [backend/docs/BACKEND_DESIGN.md](backend/docs/BACKEND_DESIGN.md)
 - **Frontend UI & State Spec:** [frontend/docs/FRONTEND_DESIGN.md](frontend/docs/FRONTEND_DESIGN.md)
 
 ```text
 Email-Productivity-Agent/
-├── docs/PLAN.md                  # Master integration plan, checklists & E2E scenarios
+├── docs/
+│   ├── PLAN.md                   # Master integration plan, checklists & E2E scenarios
+│   └── DEPLOYMENT_PLAN.md        # Live production deployment, Postgres, env & rollback guide
 ├── backend/                      # Standalone FastAPI + SQLite service
 │   ├── Dockerfile
 │   ├── requirements.txt

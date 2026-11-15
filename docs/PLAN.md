@@ -19,7 +19,8 @@ Email-Productivity-Agent/
 ├── README.md                         # Root setup, run, Docker, prompt config & usage guide
 ├── .gitignore
 ├── docs/
-│   └── PLAN.md                       # Master plan, integration contracts, checklists & scenarios
+│   ├── PLAN.md                       # Master plan, integration contracts, checklists & scenarios
+│   └── DEPLOYMENT_PLAN.md            # Live production deployment, Postgres, env, smoke & rollback plan
 ├── backend/
 │   ├── Dockerfile                    # Standalone FastAPI container image
 │   ├── .dockerignore
