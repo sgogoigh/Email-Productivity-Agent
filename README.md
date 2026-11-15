@@ -50,12 +50,15 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-Edit `backend/.env` if you want to connect a live LLM provider:
+Edit `backend/.env` to configure your LLM provider, database, and logging:
 ```env
 LLM_PROVIDER=mock          # mock | openai | gemini | openai_compatible
-LLM_API_KEY=               # Required for openai / gemini / openai_compatible
+LLM_API_KEY=               # Required for openai / gemini / openai_compatible (or GEMINI_API_KEY)
 LLM_MODEL=                 # e.g. gpt-4o-mini or gemini-2.5-flash
 LLM_ALLOW_MOCK_FALLBACK=true
+DATABASE_URL=sqlite:///data/email_agent.db   # Or postgresql+psycopg://user:pass@host:5432/dbname
+LOG_LEVEL=INFO
+LOG_FILE_PATH=logs/backend.log
 ```
 
 ### 2. Frontend Setup (`frontend/`)
@@ -145,6 +148,15 @@ docker run -d -p 3000:3000 --name email-frontend email-agent-frontend
 ### 3. Thread-Aware Auto-Reply & Draft Editing
 - Open *"Re: Meeting Request: Q4 Product Roadmap Alignment"* (which includes a 2-message thread) and click **Generate Reply Draft**.
 - Review the generated `Subject`, agenda-requesting `Body`, `Suggested Follow-Ups`, and `JSON Metadata` inside **Drafts Studio**, edit as desired, and click **Save Draft**.
+
+---
+
+## Observability, Logging & Database Connectivity
+
+- **Database Engine (SQLAlchemy 2.x Core):** Defaults to SQLite in WAL mode (`sqlite:///data/email_agent.db`) for zero-config local persistence and supports PostgreSQL (`DATABASE_URL=postgresql+psycopg://...`) via connection pooling in production.
+- **Structured JSON Logging:** FastAPI requests (`X-Request-ID`, `X-Response-Time-Ms`), database health pings, and LLM executions emit structured JSON lines to stdout and `backend/logs/backend.log`.
+- **Conversation & Quality Tracking:** Every agent chat session persists a unique `conversation_id` linked to `email_id`, per-turn `latency_ms`, and thumbs-up/down `quality_rating` feedback (`+1` / `-1`).
+- **Observability API & UI Tab:** Inspect live metrics, conversation sessions, DB connectivity, and LLM trace logs (with `prompt_hash` and token counts) in the **Observability & DB** tab or via `/api/observability/db-status`, `/api/observability/metrics`, `/api/observability/conversations`, `/api/observability/logs`, and `POST /api/observability/messages/{id}/feedback`.
 
 ---
 

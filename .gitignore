@@ -230,11 +230,12 @@ yarn-debug.log*
 pnpm-debug.log*
 next-env.d.ts
 
-# SQLite databases
+# SQLite databases & logs
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
+backend/logs/
 
 # Playwright / Frontend test artifacts
 playwright-report/
