@@ -13,13 +13,20 @@ class Settings(BaseSettings):
     """Runtime settings for the FastAPI Email Productivity Agent service."""
 
     app_name: str = "Email Productivity Agent API"
-    app_version: str = "1.0.0"
+    app_version: str = "1.1.0"
     port: int = 8000
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    # Database connectivity: set DATABASE_URL for PostgreSQL or leave blank for SQLite WAL
     database_path: str = str(BACKEND_ROOT / "data" / "email_agent.db")
+    database_url: str = ""
+
     mock_inbox_path: str = str(BACKEND_ROOT / "data" / "mock_inbox.json")
     default_prompts_path: str = str(BACKEND_ROOT / "data" / "default_prompts.json")
+
+    # Structured logging
+    log_level: str = "INFO"
+    log_file_path: str = str(BACKEND_ROOT / "logs" / "backend.log")
 
     # LLM provider settings: mock | openai | gemini | openai_compatible
     llm_provider: str = "mock"
@@ -44,8 +51,21 @@ class Settings(BaseSettings):
 
     @property
     def resolved_database_path(self) -> Path:
-        """Resolve database path relative to backend root when not absolute."""
+        """Resolve SQLite database path relative to backend root when not absolute."""
         p = Path(self.database_path)
+        return p if p.is_absolute() else (BACKEND_ROOT / p)
+
+    @property
+    def resolved_database_url(self) -> str:
+        """Return explicit DATABASE_URL or build a SQLite URL from DATABASE_PATH."""
+        if self.database_url.strip():
+            return self.database_url.strip()
+        return f"sqlite:///{self.resolved_database_path.as_posix()}"
+
+    @property
+    def resolved_log_file_path(self) -> Path:
+        """Resolve log file path relative to backend root when not absolute."""
+        p = Path(self.log_file_path)
         return p if p.is_absolute() else (BACKEND_ROOT / p)
 
     @property

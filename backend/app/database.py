@@ -1,92 +1,227 @@
-"""SQLite database connection and schema initialization."""
+"""SQLAlchemy 2.x database engine supporting SQLite (WAL mode) and PostgreSQL."""
 
-import sqlite3
-from contextlib import contextmanager
+import time
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Dict
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS emails (
-    id TEXT PRIMARY KEY,
-    thread_id TEXT NOT NULL,
-    sender TEXT NOT NULL,
-    sender_email TEXT NOT NULL,
-    recipient TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    body TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    is_read INTEGER NOT NULL DEFAULT 0,
-    category TEXT,
-    urgency TEXT,
-    category_reason TEXT,
-    action_items_json TEXT NOT NULL DEFAULT '[]',
-    processing_error TEXT,
-    processed_at TEXT
-);
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    Engine,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    create_engine,
+    event,
+    inspect,
+    text,
+)
 
-CREATE INDEX IF NOT EXISTS idx_emails_thread_id ON emails(thread_id);
-CREATE INDEX IF NOT EXISTS idx_emails_category ON emails(category);
-CREATE INDEX IF NOT EXISTS idx_emails_timestamp ON emails(timestamp DESC);
+metadata = MetaData()
 
-CREATE TABLE IF NOT EXISTS prompts (
-    key TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    template TEXT NOT NULL,
-    is_default INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-);
+emails_table = Table(
+    "emails",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("thread_id", Text, nullable=False),
+    Column("sender", Text, nullable=False),
+    Column("sender_email", Text, nullable=False),
+    Column("recipient", Text, nullable=False),
+    Column("subject", Text, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("timestamp", Text, nullable=False),
+    Column("is_read", Integer, nullable=False, default=0),
+    Column("category", Text),
+    Column("urgency", Text),
+    Column("category_reason", Text),
+    Column("action_items_json", Text, nullable=False, default="[]"),
+    Column("processing_error", Text),
+    Column("processed_at", Text),
+    Index("idx_emails_thread_id", "thread_id"),
+    Index("idx_emails_category", "category"),
+    Index("idx_emails_timestamp", "timestamp"),
+)
 
-CREATE TABLE IF NOT EXISTS drafts (
-    id TEXT PRIMARY KEY,
-    email_id TEXT,
-    subject TEXT NOT NULL,
-    body TEXT NOT NULL,
-    suggested_followups_json TEXT NOT NULL DEFAULT '[]',
-    metadata_json TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'draft' CHECK (status = 'draft'),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE SET NULL
-);
+prompts_table = Table(
+    "prompts",
+    metadata,
+    Column("key", Text, primary_key=True),
+    Column("name", Text, nullable=False),
+    Column("description", Text, nullable=False, default=""),
+    Column("template", Text, nullable=False),
+    Column("is_default", Integer, nullable=False, default=0),
+    Column("updated_at", Text, nullable=False),
+)
 
-CREATE INDEX IF NOT EXISTS idx_drafts_email_id ON drafts(email_id);
-CREATE INDEX IF NOT EXISTS idx_drafts_updated_at ON drafts(updated_at DESC);
+drafts_table = Table(
+    "drafts",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("email_id", Text, ForeignKey("emails.id", ondelete="SET NULL"), nullable=True),
+    Column("subject", Text, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("suggested_followups_json", Text, nullable=False, default="[]"),
+    Column("metadata_json", Text, nullable=False, default="{}"),
+    Column("status", Text, nullable=False, default="draft"),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    CheckConstraint("status = 'draft'", name="ck_drafts_status_draft_only"),
+    Index("idx_drafts_email_id", "email_id"),
+    Index("idx_drafts_updated_at", "updated_at"),
+)
 
-CREATE TABLE IF NOT EXISTS chat_messages (
-    id TEXT PRIMARY KEY,
-    scope TEXT NOT NULL CHECK (scope IN ('email', 'inbox')),
-    email_id TEXT,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-    content TEXT NOT NULL,
-    metadata_json TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
-);
+conversations_table = Table(
+    "conversations",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("scope", Text, nullable=False),
+    Column("email_id", Text, nullable=True),
+    Column("title", Text, nullable=False, default=""),
+    Column("created_at", Text, nullable=False),
+    Column("updated_at", Text, nullable=False),
+    CheckConstraint("scope IN ('email', 'inbox')", name="ck_conversations_scope"),
+    Index("idx_conversations_email_id", "email_id"),
+    Index("idx_conversations_updated_at", "updated_at"),
+)
 
-CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at ASC);
-"""
+chat_messages_table = Table(
+    "chat_messages",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("conversation_id", Text, nullable=False),
+    Column("scope", Text, nullable=False),
+    Column("email_id", Text, nullable=True),
+    Column("role", Text, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("latency_ms", Float, nullable=True),
+    Column("llm_mode", Text, nullable=True),
+    Column("model_name", Text, nullable=True),
+    Column("quality_rating", Integer, nullable=True),
+    Column("quality_notes", Text, nullable=True),
+    Column("metadata_json", Text, nullable=False, default="{}"),
+    Column("created_at", Text, nullable=False),
+    CheckConstraint("scope IN ('email', 'inbox')", name="ck_chat_scope"),
+    CheckConstraint("role IN ('user', 'assistant')", name="ck_chat_role"),
+    Index("idx_chat_messages_conversation_id", "conversation_id"),
+    Index("idx_chat_messages_email_id", "email_id"),
+    Index("idx_chat_messages_created_at", "created_at"),
+)
+
+llm_execution_logs_table = Table(
+    "llm_execution_logs",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("request_id", Text, nullable=True),
+    Column("operation", Text, nullable=False),
+    Column("conversation_id", Text, nullable=True),
+    Column("email_id", Text, nullable=True),
+    Column("prompt_key", Text, nullable=True),
+    Column("prompt_hash", Text, nullable=True),
+    Column("provider", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("started_at", Text, nullable=False),
+    Column("completed_at", Text, nullable=False),
+    Column("latency_ms", Float, nullable=False),
+    Column("input_tokens", Integer, nullable=False, default=0),
+    Column("output_tokens", Integer, nullable=False, default=0),
+    Column("total_tokens", Integer, nullable=False, default=0),
+    Column("parse_valid", Integer, nullable=False, default=1),
+    Column("status", Text, nullable=False),
+    Column("error_message", Text, nullable=True),
+    Column("output_preview", Text, nullable=True),
+    Index("idx_llm_logs_operation", "operation"),
+    Index("idx_llm_logs_conversation_id", "conversation_id"),
+    Index("idx_llm_logs_email_id", "email_id"),
+    Index("idx_llm_logs_started_at", "started_at"),
+)
 
 
-def init_database(db_path: Path) -> None:
-    """Create parent directories and initialize all SQLite tables if absent."""
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("PRAGMA foreign_keys = ON;")
-        conn.executescript(SCHEMA_SQL)
-        conn.commit()
+def create_db_engine(database_url: str) -> Engine:
+    """Create a configured SQLAlchemy Engine for SQLite WAL or PostgreSQL."""
+    is_sqlite = database_url.startswith("sqlite")
+    if is_sqlite:
+        raw_path = database_url.replace("sqlite:///", "", 1)
+        if raw_path and raw_path != ":memory:":
+            Path(raw_path).parent.mkdir(parents=True, exist_ok=True)
+        engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False, "timeout": 15},
+            future=True,
+        )
+
+        @event.listens_for(engine, "connect")
+        def _configure_sqlite_pragmas(dbapi_connection: Any, _record: Any) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys = ON;")
+            cursor.execute("PRAGMA journal_mode = WAL;")
+            cursor.execute("PRAGMA synchronous = NORMAL;")
+            cursor.execute("PRAGMA busy_timeout = 5000;")
+            cursor.close()
+
+        return engine
+
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10,
+        future=True,
+    )
 
 
-@contextmanager
-def get_connection(db_path: Path) -> Iterator[sqlite3.Connection]:
-    """Yield a configured SQLite connection with row access by column name."""
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON;")
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+def _migrate_sqlite_chat_columns(engine: Engine) -> None:
+    """Add new observability columns when upgrading an existing SQLite DB file."""
+    inspector = inspect(engine)
+    if "chat_messages" not in inspector.get_table_names():
+        return
+    existing_cols = {col["name"] for col in inspector.get_columns("chat_messages")}
+    migrations = [
+        ("conversation_id", "TEXT NOT NULL DEFAULT 'conv-legacy'"),
+        ("latency_ms", "REAL"),
+        ("llm_mode", "TEXT"),
+        ("model_name", "TEXT"),
+        ("quality_rating", "INTEGER"),
+        ("quality_notes", "TEXT"),
+    ]
+    with engine.begin() as conn:
+        for col_name, col_def in migrations:
+            if col_name not in existing_cols:
+                conn.execute(text(f"ALTER TABLE chat_messages ADD COLUMN {col_name} {col_def}"))
+
+
+def init_database(engine: Engine) -> None:
+    """Create all tables and apply lightweight backward-compatible migrations."""
+    _migrate_sqlite_chat_columns(engine)
+    metadata.create_all(engine)
+
+
+def ping_database(engine: Engine) -> Dict[str, Any]:
+    """Verify live database connectivity, measure ping latency, and inspect engine state."""
+    start = time.perf_counter()
+    dialect = engine.dialect.name
+    wal_mode: str | None = None
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+        if dialect == "sqlite":
+            wal_mode = str(conn.execute(text("PRAGMA journal_mode")).scalar() or "")
+    latency_ms = round((time.perf_counter() - start) * 1000.0, 2)
+
+    pool_info: Dict[str, Any] = {"pool_class": engine.pool.__class__.__name__}
+    if hasattr(engine.pool, "size"):
+        try:
+            pool_info["pool_size"] = engine.pool.size()
+            pool_info["checked_out"] = engine.pool.checkedout()
+        except Exception:
+            pass
+
+    return {
+        "status": "connected",
+        "dialect": dialect,
+        "wal_mode": wal_mode,
+        "db_latency_ms": latency_ms,
+        "pool": pool_info,
+    }

@@ -1,4 +1,4 @@
-"""Pydantic schemas for requests, responses, and domain entities."""
+"""Pydantic schemas for requests, responses, observability, and domain entities."""
 
 from typing import Any, Dict, List, Literal, Optional
 
@@ -86,6 +86,7 @@ class ProcessInboxResponse(BaseModel):
     total_requested: int
     processed_count: int
     error_count: int
+    duration_ms: float = 0.0
     prompts_used: Dict[str, str]
     emails: List[EmailOut]
 
@@ -124,17 +125,24 @@ class AgentChatRequest(BaseModel):
     query: str = Field(..., min_length=1)
     scope: Literal["email", "inbox"] = "email"
     email_id: Optional[str] = None
+    conversation_id: Optional[str] = None
     tone: Optional[str] = None
 
 
 class ChatMessageOut(BaseModel):
-    """Persisted chat turn."""
+    """Persisted chat turn linked to unique conversation_id and optional email_id."""
 
     id: str
+    conversation_id: str
     scope: Literal["email", "inbox"]
     email_id: Optional[str] = None
     role: Literal["user", "assistant"]
     content: str
+    latency_ms: Optional[float] = None
+    llm_mode: Optional[str] = None
+    model_name: Optional[str] = None
+    quality_rating: Optional[int] = None
+    quality_notes: Optional[str] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: str
 
@@ -142,12 +150,102 @@ class ChatMessageOut(BaseModel):
 class AgentChatResponse(BaseModel):
     """Assistant response returned by the Email Agent."""
 
+    conversation_id: str
     user_message: ChatMessageOut
     assistant_message: ChatMessageOut
     suggested_draft: Optional[Dict[str, Any]] = None
     referenced_email_ids: List[str] = Field(default_factory=list)
     prompts_used: List[str] = Field(default_factory=list)
+    latency_ms: float = 0.0
     error: Optional[str] = None
+
+
+class ConversationOut(BaseModel):
+    """Logged conversation summary."""
+
+    id: str
+    scope: Literal["email", "inbox"]
+    email_id: Optional[str] = None
+    title: str
+    message_count: int = 0
+    avg_latency_ms: Optional[float] = None
+    positive_ratings: int = 0
+    negative_ratings: int = 0
+    created_at: str
+    updated_at: str
+
+
+class QualityFeedbackRequest(BaseModel):
+    """User quality rating (+1 thumbs up, -1 thumbs down) for an assistant message."""
+
+    rating: Literal[1, -1]
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class LLMExecutionLogOut(BaseModel):
+    """Structured telemetry record for a single LLM call."""
+
+    id: str
+    request_id: Optional[str] = None
+    operation: str
+    conversation_id: Optional[str] = None
+    email_id: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_hash: Optional[str] = None
+    provider: str
+    model: str
+    started_at: str
+    completed_at: str
+    latency_ms: float
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    parse_valid: bool
+    status: str
+    error_message: Optional[str] = None
+    output_preview: Optional[str] = None
+
+
+class DatabaseStatusOut(BaseModel):
+    """Live database connectivity diagnostic report."""
+
+    status: str
+    dialect: str
+    wal_mode: Optional[str] = None
+    db_latency_ms: float
+    pool: Dict[str, Any] = Field(default_factory=dict)
+    table_counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class OperationStatsOut(BaseModel):
+    """Aggregated timing and reliability metrics per LLM operation."""
+
+    operation: str
+    count: int
+    success_count: int
+    error_count: int
+    avg_latency_ms: float
+    p95_latency_ms: float
+    total_tokens: int
+
+
+class ObservabilityMetricsOut(BaseModel):
+    """Overall quality, timing, and usage dashboard metrics."""
+
+    total_calls: int
+    success_count: int
+    error_count: int
+    success_rate_pct: float
+    avg_latency_ms: float
+    p95_latency_ms: float
+    total_tokens: int
+    parse_valid_rate_pct: float
+    total_conversations: int
+    rated_messages: int
+    positive_ratings: int
+    negative_ratings: int
+    approval_rate_pct: Optional[float] = None
+    by_operation: List[OperationStatsOut] = Field(default_factory=list)
 
 
 class DraftGenerateRequest(BaseModel):
@@ -182,10 +280,15 @@ class DraftUpdate(BaseModel):
 class HealthResponse(BaseModel):
     """Healthcheck payload for readiness probes and UI status indicator."""
 
-    status: Literal["ok"]
+    status: Literal["ok", "degraded"]
     service: str
     version: str
     llm_mode: str
+    db_status: str
+    db_dialect: str
+    db_latency_ms: float
     email_count: int
     prompt_count: int
     draft_count: int
+    conversation_count: int
+    log_count: int

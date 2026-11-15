@@ -1,27 +1,61 @@
-"""SQLite persistence repository for emails, Prompt Brain, drafts, and chat."""
+"""SQLAlchemy persistence repository for emails, Prompt Brain, drafts, chat, and telemetry."""
 
+import hashlib
 import json
-import sqlite3
+import math
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.database import get_connection
+from sqlalchemy import Engine, case, delete, func, insert, or_, select, update
+
+from app.database import (
+    chat_messages_table,
+    conversations_table,
+    drafts_table,
+    emails_table,
+    llm_execution_logs_table,
+    ping_database,
+    prompts_table,
+)
 from app.models.schemas import (
     ActionItem,
     ChatMessageOut,
+    ConversationOut,
+    DatabaseStatusOut,
     DraftOut,
     EmailDetailOut,
     EmailInput,
     EmailOut,
+    LLMExecutionLogOut,
+    ObservabilityMetricsOut,
+    OperationStatsOut,
     PromptOut,
 )
 
 
 def utc_now_iso() -> str:
     """Return current UTC timestamp in ISO-8601 format."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def compute_prompt_hash(template: str) -> str:
+    """Return a short deterministic SHA-256 fingerprint of a prompt template."""
+    return hashlib.sha256(template.encode("utf-8")).hexdigest()[:12]
+
+
+def _percentile(values: List[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    idx = min(len(ordered) - 1, max(0, math.ceil((pct / 100.0) * len(ordered)) - 1))
+    return round(ordered[idx], 2)
 
 
 def _parse_json_list(raw: Optional[str]) -> List[Any]:
@@ -44,7 +78,7 @@ def _parse_json_dict(raw: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
-def _row_to_email(row: sqlite3.Row) -> EmailOut:
+def _row_to_email(row: Any) -> EmailOut:
     raw_items = _parse_json_list(row["action_items_json"])
     items: List[ActionItem] = []
     for item in raw_items:
@@ -74,7 +108,7 @@ def _row_to_email(row: sqlite3.Row) -> EmailOut:
     )
 
 
-def _row_to_prompt(row: sqlite3.Row) -> PromptOut:
+def _row_to_prompt(row: Any) -> PromptOut:
     return PromptOut(
         key=row["key"],
         name=row["name"],
@@ -85,7 +119,7 @@ def _row_to_prompt(row: sqlite3.Row) -> PromptOut:
     )
 
 
-def _row_to_draft(row: sqlite3.Row) -> DraftOut:
+def _row_to_draft(row: Any) -> DraftOut:
     followups = [str(x) for x in _parse_json_list(row["suggested_followups_json"])]
     return DraftOut(
         id=row["id"],
@@ -100,100 +134,137 @@ def _row_to_draft(row: sqlite3.Row) -> DraftOut:
     )
 
 
-def _row_to_chat_message(row: sqlite3.Row) -> ChatMessageOut:
+def _row_to_chat_message(row: Any) -> ChatMessageOut:
     return ChatMessageOut(
         id=row["id"],
+        conversation_id=row["conversation_id"],
         scope=row["scope"],
         email_id=row["email_id"],
         role=row["role"],
         content=row["content"],
+        latency_ms=row["latency_ms"],
+        llm_mode=row["llm_mode"],
+        model_name=row["model_name"],
+        quality_rating=row["quality_rating"],
+        quality_notes=row["quality_notes"],
         metadata=_parse_json_dict(row["metadata_json"]),
         created_at=row["created_at"],
     )
 
 
-class EmailStore:
-    """Repository encapsulating all SQLite CRUD operations."""
+def _row_to_llm_log(row: Any) -> LLMExecutionLogOut:
+    return LLMExecutionLogOut(
+        id=row["id"],
+        request_id=row["request_id"],
+        operation=row["operation"],
+        conversation_id=row["conversation_id"],
+        email_id=row["email_id"],
+        prompt_key=row["prompt_key"],
+        prompt_hash=row["prompt_hash"],
+        provider=row["provider"],
+        model=row["model"],
+        started_at=row["started_at"],
+        completed_at=row["completed_at"],
+        latency_ms=row["latency_ms"],
+        input_tokens=row["input_tokens"],
+        output_tokens=row["output_tokens"],
+        total_tokens=row["total_tokens"],
+        parse_valid=bool(row["parse_valid"]),
+        status=row["status"],
+        error_message=row["error_message"],
+        output_preview=row["output_preview"],
+    )
 
-    def __init__(self, db_path: Path) -> None:
-        self.db_path = db_path
+
+class EmailStore:
+    """Dialect-agnostic SQLAlchemy repository for all domain and observability tables."""
+
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
 
     # ------------------------------------------------------------------
     # Prompts ("The Agent Brain")
     # ------------------------------------------------------------------
-    def seed_default_prompts(self, default_prompts_path: Path, overwrite: bool = False) -> List[PromptOut]:
-        """Load default prompt templates from JSON into SQLite."""
+    def seed_default_prompts(
+        self, default_prompts_path: Path, overwrite: bool = False
+    ) -> List[PromptOut]:
+        """Load default prompt templates from JSON into the database."""
         data = json.loads(default_prompts_path.read_text(encoding="utf-8"))
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with self.engine.begin() as conn:
             for item in data:
                 existing = conn.execute(
-                    "SELECT key FROM prompts WHERE key = ?", (item["key"],)
-                ).fetchone()
-                if existing and not overwrite:
-                    continue
-                conn.execute(
-                    """
-                    INSERT INTO prompts (key, name, description, template, is_default, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(key) DO UPDATE SET
-                        name = excluded.name,
-                        description = excluded.description,
-                        template = excluded.template,
-                        is_default = excluded.is_default,
-                        updated_at = excluded.updated_at
-                    """,
-                    (
-                        item["key"],
-                        item["name"],
-                        item.get("description", ""),
-                        item["template"],
-                        1 if item.get("is_default", True) else 0,
-                        now,
-                    ),
-                )
+                    select(prompts_table.c.key).where(prompts_table.c.key == item["key"])
+                ).first()
+                values = {
+                    "name": item["name"],
+                    "description": item.get("description", ""),
+                    "template": item["template"],
+                    "is_default": 1 if item.get("is_default", True) else 0,
+                    "updated_at": now,
+                }
+                if existing:
+                    if overwrite:
+                        conn.execute(
+                            update(prompts_table)
+                            .where(prompts_table.c.key == item["key"])
+                            .values(**values)
+                        )
+                else:
+                    conn.execute(
+                        insert(prompts_table).values(key=item["key"], **values)
+                    )
         return self.list_prompts()
 
     def list_prompts(self) -> List[PromptOut]:
         """Return all stored prompts ordered with core defaults first."""
-        with get_connection(self.db_path) as conn:
+        priority_order = case(
+            (prompts_table.c.key == "categorization", 1),
+            (prompts_table.c.key == "action_item", 2),
+            (prompts_table.c.key == "auto_reply", 3),
+            else_=4,
+        )
+        with self.engine.connect() as conn:
             rows = conn.execute(
-                """
-                SELECT * FROM prompts
-                ORDER BY
-                    CASE key
-                        WHEN 'categorization' THEN 1
-                        WHEN 'action_item' THEN 2
-                        WHEN 'auto_reply' THEN 3
-                        ELSE 4
-                    END,
-                    name ASC
-                """
-            ).fetchall()
+                select(prompts_table).order_by(priority_order, prompts_table.c.name.asc())
+            ).mappings()
             return [_row_to_prompt(row) for row in rows]
 
     def get_prompt(self, key: str) -> Optional[PromptOut]:
         """Return a single prompt by key."""
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM prompts WHERE key = ?", (key,)).fetchone()
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(select(prompts_table).where(prompts_table.c.key == key))
+                .mappings()
+                .first()
+            )
             return _row_to_prompt(row) if row else None
 
     def get_prompt_map(self) -> Dict[str, PromptOut]:
         """Return prompts keyed by prompt key."""
         return {prompt.key: prompt for prompt in self.list_prompts()}
 
-    def create_prompt(self, key: str, name: str, description: str, template: str) -> PromptOut:
+    def create_prompt(
+        self, key: str, name: str, description: str, template: str
+    ) -> PromptOut:
         """Create a new custom prompt template."""
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with self.engine.begin() as conn:
             conn.execute(
-                """
-                INSERT INTO prompts (key, name, description, template, is_default, updated_at)
-                VALUES (?, ?, ?, ?, 0, ?)
-                """,
-                (key, name, description, template, now),
+                insert(prompts_table).values(
+                    key=key,
+                    name=name,
+                    description=description,
+                    template=template,
+                    is_default=0,
+                    updated_at=now,
+                )
             )
-            row = conn.execute("SELECT * FROM prompts WHERE key = ?", (key,)).fetchone()
+            row = (
+                conn.execute(select(prompts_table).where(prompts_table.c.key == key))
+                .mappings()
+                .one()
+            )
             return _row_to_prompt(row)
 
     def update_prompt(
@@ -205,37 +276,55 @@ class EmailStore:
     ) -> Optional[PromptOut]:
         """Update an existing prompt template."""
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
-            existing = conn.execute("SELECT * FROM prompts WHERE key = ?", (key,)).fetchone()
+        with self.engine.begin() as conn:
+            existing = (
+                conn.execute(select(prompts_table).where(prompts_table.c.key == key))
+                .mappings()
+                .first()
+            )
             if not existing:
                 return None
-            new_name = name if name is not None else existing["name"]
-            new_desc = description if description is not None else existing["description"]
             conn.execute(
-                """
-                UPDATE prompts
-                SET name = ?, description = ?, template = ?, updated_at = ?
-                WHERE key = ?
-                """,
-                (new_name, new_desc, template, now, key),
+                update(prompts_table)
+                .where(prompts_table.c.key == key)
+                .values(
+                    name=name if name is not None else existing["name"],
+                    description=(
+                        description if description is not None else existing["description"]
+                    ),
+                    template=template,
+                    updated_at=now,
+                )
             )
-            row = conn.execute("SELECT * FROM prompts WHERE key = ?", (key,)).fetchone()
+            row = (
+                conn.execute(select(prompts_table).where(prompts_table.c.key == key))
+                .mappings()
+                .one()
+            )
             return _row_to_prompt(row)
 
     def delete_prompt(self, key: str) -> bool:
         """Delete a non-default custom prompt."""
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT is_default FROM prompts WHERE key = ?", (key,)).fetchone()
+        with self.engine.begin() as conn:
+            row = (
+                conn.execute(
+                    select(prompts_table.c.is_default).where(prompts_table.c.key == key)
+                )
+                .mappings()
+                .first()
+            )
             if not row or row["is_default"]:
                 return False
-            conn.execute("DELETE FROM prompts WHERE key = ?", (key,))
+            conn.execute(delete(prompts_table).where(prompts_table.c.key == key))
             return True
 
     # ------------------------------------------------------------------
     # Emails & Processing State
     # ------------------------------------------------------------------
-    def load_mock_inbox(self, mock_inbox_path: Path, clear_existing: bool = True) -> List[EmailOut]:
-        """Load sample emails from JSON file into SQLite."""
+    def load_mock_inbox(
+        self, mock_inbox_path: Path, clear_existing: bool = True
+    ) -> List[EmailOut]:
+        """Load sample emails from JSON file into database."""
         raw_emails = json.loads(mock_inbox_path.read_text(encoding="utf-8"))
         parsed = [EmailInput(**item) for item in raw_emails]
         return self.ingest_raw_emails(parsed, clear_existing=clear_existing)
@@ -243,50 +332,40 @@ class EmailStore:
     def ingest_raw_emails(
         self, emails: List[EmailInput], clear_existing: bool = False
     ) -> List[EmailOut]:
-        """Insert or replace raw emails in SQLite prior to LLM processing."""
-        with get_connection(self.db_path) as conn:
+        """Insert or reset raw emails in database prior to LLM processing."""
+        with self.engine.begin() as conn:
             if clear_existing:
-                conn.execute("DELETE FROM emails")
-            for idx, item in enumerate(emails):
+                conn.execute(delete(emails_table))
+            for item in emails:
                 email_id = item.id or f"email-{uuid.uuid4().hex[:8]}"
                 thread_id = item.thread_id or f"thread-{email_id}"
-                conn.execute(
-                    """
-                    INSERT INTO emails (
-                        id, thread_id, sender, sender_email, recipient,
-                        subject, body, timestamp, is_read,
-                        category, urgency, category_reason, action_items_json,
-                        processing_error, processed_at
+                values = {
+                    "thread_id": thread_id,
+                    "sender": item.sender,
+                    "sender_email": item.sender_email,
+                    "recipient": item.recipient,
+                    "subject": item.subject,
+                    "body": item.body,
+                    "timestamp": item.timestamp,
+                    "is_read": 1 if item.is_read else 0,
+                    "category": None,
+                    "urgency": None,
+                    "category_reason": None,
+                    "action_items_json": "[]",
+                    "processing_error": None,
+                    "processed_at": None,
+                }
+                existing = conn.execute(
+                    select(emails_table.c.id).where(emails_table.c.id == email_id)
+                ).first()
+                if existing:
+                    conn.execute(
+                        update(emails_table)
+                        .where(emails_table.c.id == email_id)
+                        .values(**values)
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, '[]', NULL, NULL)
-                    ON CONFLICT(id) DO UPDATE SET
-                        thread_id = excluded.thread_id,
-                        sender = excluded.sender,
-                        sender_email = excluded.sender_email,
-                        recipient = excluded.recipient,
-                        subject = excluded.subject,
-                        body = excluded.body,
-                        timestamp = excluded.timestamp,
-                        is_read = excluded.is_read,
-                        category = NULL,
-                        urgency = NULL,
-                        category_reason = NULL,
-                        action_items_json = '[]',
-                        processing_error = NULL,
-                        processed_at = NULL
-                    """,
-                    (
-                        email_id,
-                        thread_id,
-                        item.sender,
-                        item.sender_email,
-                        item.recipient,
-                        item.subject,
-                        item.body,
-                        item.timestamp,
-                        1 if item.is_read else 0,
-                    ),
-                )
+                else:
+                    conn.execute(insert(emails_table).values(id=email_id, **values))
         return self.list_emails()
 
     def list_emails(
@@ -296,35 +375,41 @@ class EmailStore:
         processed: Optional[bool] = None,
     ) -> List[EmailOut]:
         """List emails ordered newest-first with optional filters."""
-        clauses: List[str] = []
-        params: List[Any] = []
+        stmt = select(emails_table)
         if category and category.lower() != "all":
             if category.lower() == "unprocessed":
-                clauses.append("category IS NULL")
+                stmt = stmt.where(emails_table.c.category.is_(None))
             else:
-                clauses.append("LOWER(category) = LOWER(?)")
-                params.append(category)
+                stmt = stmt.where(
+                    func.lower(emails_table.c.category) == category.lower()
+                )
         if processed is True:
-            clauses.append("processed_at IS NOT NULL")
+            stmt = stmt.where(emails_table.c.processed_at.is_not(None))
         elif processed is False:
-            clauses.append("processed_at IS NULL")
+            stmt = stmt.where(emails_table.c.processed_at.is_(None))
         if search and search.strip():
             term = f"%{search.strip()}%"
-            clauses.append("(sender LIKE ? OR sender_email LIKE ? OR subject LIKE ? OR body LIKE ?)")
-            params.extend([term, term, term, term])
-
-        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        with get_connection(self.db_path) as conn:
-            rows = conn.execute(
-                f"SELECT * FROM emails {where_sql} ORDER BY timestamp DESC, id ASC",
-                tuple(params),
-            ).fetchall()
+            stmt = stmt.where(
+                or_(
+                    emails_table.c.sender.ilike(term),
+                    emails_table.c.sender_email.ilike(term),
+                    emails_table.c.subject.ilike(term),
+                    emails_table.c.body.ilike(term),
+                )
+            )
+        stmt = stmt.order_by(emails_table.c.timestamp.desc(), emails_table.c.id.asc())
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).mappings()
             return [_row_to_email(row) for row in rows]
 
     def get_email(self, email_id: str) -> Optional[EmailOut]:
         """Fetch a single email by ID."""
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(select(emails_table).where(emails_table.c.id == email_id))
+                .mappings()
+                .first()
+            )
             return _row_to_email(row) if row else None
 
     def get_email_detail(self, email_id: str) -> Optional[EmailDetailOut]:
@@ -332,20 +417,22 @@ class EmailStore:
         email = self.get_email(email_id)
         if not email:
             return None
-        with get_connection(self.db_path) as conn:
+        with self.engine.connect() as conn:
             thread_rows = conn.execute(
-                "SELECT * FROM emails WHERE thread_id = ? ORDER BY timestamp ASC, id ASC",
-                (email.thread_id,),
-            ).fetchall()
+                select(emails_table)
+                .where(emails_table.c.thread_id == email.thread_id)
+                .order_by(emails_table.c.timestamp.asc(), emails_table.c.id.asc())
+            ).mappings()
             draft_rows = conn.execute(
-                "SELECT * FROM drafts WHERE email_id = ? ORDER BY updated_at DESC",
-                (email.id,),
-            ).fetchall()
-        return EmailDetailOut(
-            **email.model_dump(),
-            thread_emails=[_row_to_email(r) for r in thread_rows],
-            drafts=[_row_to_draft(r) for r in draft_rows],
-        )
+                select(drafts_table)
+                .where(drafts_table.c.email_id == email.id)
+                .order_by(drafts_table.c.updated_at.desc())
+            ).mappings()
+            return EmailDetailOut(
+                **email.model_dump(),
+                thread_emails=[_row_to_email(r) for r in thread_rows],
+                drafts=[_row_to_draft(r) for r in draft_rows],
+            )
 
     def save_email_processing(
         self,
@@ -359,29 +446,24 @@ class EmailStore:
         """Persist categorization and extracted action items for an email."""
         now = utc_now_iso()
         serialized_items = json.dumps([item.model_dump() for item in action_items])
-        with get_connection(self.db_path) as conn:
+        with self.engine.begin() as conn:
             conn.execute(
-                """
-                UPDATE emails
-                SET category = ?,
-                    urgency = ?,
-                    category_reason = ?,
-                    action_items_json = ?,
-                    processing_error = ?,
-                    processed_at = ?
-                WHERE id = ?
-                """,
-                (
-                    category,
-                    urgency,
-                    category_reason,
-                    serialized_items,
-                    processing_error,
-                    now if not processing_error else None,
-                    email_id,
-                ),
+                update(emails_table)
+                .where(emails_table.c.id == email_id)
+                .values(
+                    category=category,
+                    urgency=urgency,
+                    category_reason=category_reason,
+                    action_items_json=serialized_items,
+                    processing_error=processing_error,
+                    processed_at=now if not processing_error else None,
+                )
             )
-            row = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
+            row = (
+                conn.execute(select(emails_table).where(emails_table.c.id == email_id))
+                .mappings()
+                .first()
+            )
             return _row_to_email(row) if row else None
 
     # ------------------------------------------------------------------
@@ -398,48 +480,45 @@ class EmailStore:
         """Create and persist a new email draft."""
         draft_id = f"draft-{uuid.uuid4().hex[:10]}"
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with self.engine.begin() as conn:
             conn.execute(
-                """
-                INSERT INTO drafts (
-                    id, email_id, subject, body,
-                    suggested_followups_json, metadata_json,
-                    status, created_at, updated_at
+                insert(drafts_table).values(
+                    id=draft_id,
+                    email_id=email_id,
+                    subject=subject,
+                    body=body,
+                    suggested_followups_json=json.dumps(suggested_followups or []),
+                    metadata_json=json.dumps(metadata or {}),
+                    status="draft",
+                    created_at=now,
+                    updated_at=now,
                 )
-                VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?)
-                """,
-                (
-                    draft_id,
-                    email_id,
-                    subject,
-                    body,
-                    json.dumps(suggested_followups or []),
-                    json.dumps(metadata or {}),
-                    now,
-                    now,
-                ),
             )
-            row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+            row = (
+                conn.execute(select(drafts_table).where(drafts_table.c.id == draft_id))
+                .mappings()
+                .one()
+            )
             return _row_to_draft(row)
 
     def list_drafts(self, email_id: Optional[str] = None) -> List[DraftOut]:
         """List saved drafts, optionally filtered by source email ID."""
-        with get_connection(self.db_path) as conn:
-            if email_id:
-                rows = conn.execute(
-                    "SELECT * FROM drafts WHERE email_id = ? ORDER BY updated_at DESC",
-                    (email_id,),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM drafts ORDER BY updated_at DESC"
-                ).fetchall()
+        stmt = select(drafts_table)
+        if email_id:
+            stmt = stmt.where(drafts_table.c.email_id == email_id)
+        stmt = stmt.order_by(drafts_table.c.updated_at.desc())
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).mappings()
             return [_row_to_draft(row) for row in rows]
 
     def get_draft(self, draft_id: str) -> Optional[DraftOut]:
         """Fetch a single draft by ID."""
-        with get_connection(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+        with self.engine.connect() as conn:
+            row = (
+                conn.execute(select(drafts_table).where(drafts_table.c.id == draft_id))
+                .mappings()
+                .first()
+            )
             return _row_to_draft(row) if row else None
 
     def update_draft(
@@ -452,97 +531,415 @@ class EmailStore:
     ) -> Optional[DraftOut]:
         """Update an existing draft while enforcing status='draft'."""
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
-            existing = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+        with self.engine.begin() as conn:
+            existing = (
+                conn.execute(select(drafts_table).where(drafts_table.c.id == draft_id))
+                .mappings()
+                .first()
+            )
             if not existing:
                 return None
-            new_subject = subject if subject is not None else existing["subject"]
-            new_body = body if body is not None else existing["body"]
-            new_followups = (
-                json.dumps(suggested_followups)
-                if suggested_followups is not None
-                else existing["suggested_followups_json"]
-            )
-            new_metadata = (
-                json.dumps(metadata) if metadata is not None else existing["metadata_json"]
-            )
             conn.execute(
-                """
-                UPDATE drafts
-                SET subject = ?, body = ?, suggested_followups_json = ?,
-                    metadata_json = ?, status = 'draft', updated_at = ?
-                WHERE id = ?
-                """,
-                (new_subject, new_body, new_followups, new_metadata, now, draft_id),
+                update(drafts_table)
+                .where(drafts_table.c.id == draft_id)
+                .values(
+                    subject=subject if subject is not None else existing["subject"],
+                    body=body if body is not None else existing["body"],
+                    suggested_followups_json=(
+                        json.dumps(suggested_followups)
+                        if suggested_followups is not None
+                        else existing["suggested_followups_json"]
+                    ),
+                    metadata_json=(
+                        json.dumps(metadata)
+                        if metadata is not None
+                        else existing["metadata_json"]
+                    ),
+                    status="draft",
+                    updated_at=now,
+                )
             )
-            row = conn.execute("SELECT * FROM drafts WHERE id = ?", (draft_id,)).fetchone()
+            row = (
+                conn.execute(select(drafts_table).where(drafts_table.c.id == draft_id))
+                .mappings()
+                .one()
+            )
             return _row_to_draft(row)
 
     def delete_draft(self, draft_id: str) -> bool:
         """Delete a draft by ID."""
-        with get_connection(self.db_path) as conn:
-            cur = conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
-            return cur.rowcount > 0
+        with self.engine.begin() as conn:
+            res = conn.execute(delete(drafts_table).where(drafts_table.c.id == draft_id))
+            return res.rowcount > 0
 
     # ------------------------------------------------------------------
-    # Chat History & Counts
+    # Conversations, Chat History & Quality Feedback
     # ------------------------------------------------------------------
+    def ensure_conversation(
+        self,
+        conversation_id: Optional[str],
+        scope: str,
+        email_id: Optional[str],
+        title_hint: str,
+    ) -> str:
+        """Create or touch a conversation record and return its unique conversation_id."""
+        conv_id = (conversation_id or "").strip() or f"conv-{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        title = title_hint.strip()[:120] or (
+            f"Email {email_id}" if email_id else "Inbox Conversation"
+        )
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                select(conversations_table.c.id).where(conversations_table.c.id == conv_id)
+            ).first()
+            if existing:
+                conn.execute(
+                    update(conversations_table)
+                    .where(conversations_table.c.id == conv_id)
+                    .values(updated_at=now)
+                )
+            else:
+                conn.execute(
+                    insert(conversations_table).values(
+                        id=conv_id,
+                        scope=scope,
+                        email_id=email_id,
+                        title=title,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+        return conv_id
+
     def add_chat_message(
         self,
+        conversation_id: str,
         scope: str,
         role: str,
         content: str,
         email_id: Optional[str] = None,
+        latency_ms: Optional[float] = None,
+        llm_mode: Optional[str] = None,
+        model_name: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ChatMessageOut:
-        """Persist a chat turn for the Email Agent."""
+        """Persist a chat turn linked to conversation_id and optional email_id."""
         msg_id = f"msg-{uuid.uuid4().hex[:10]}"
         now = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with self.engine.begin() as conn:
             conn.execute(
-                """
-                INSERT INTO chat_messages (id, scope, email_id, role, content, metadata_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (msg_id, scope, email_id, role, content, json.dumps(metadata or {}), now),
+                insert(chat_messages_table).values(
+                    id=msg_id,
+                    conversation_id=conversation_id,
+                    scope=scope,
+                    email_id=email_id,
+                    role=role,
+                    content=content,
+                    latency_ms=latency_ms,
+                    llm_mode=llm_mode,
+                    model_name=model_name,
+                    quality_rating=None,
+                    quality_notes=None,
+                    metadata_json=json.dumps(metadata or {}),
+                    created_at=now,
+                )
             )
-            row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (msg_id,)).fetchone()
+            row = (
+                conn.execute(
+                    select(chat_messages_table).where(chat_messages_table.c.id == msg_id)
+                )
+                .mappings()
+                .one()
+            )
             return _row_to_chat_message(row)
 
     def list_chat_messages(
-        self, scope: Optional[str] = None, email_id: Optional[str] = None, limit: int = 50
+        self,
+        scope: Optional[str] = None,
+        email_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        limit: int = 50,
     ) -> List[ChatMessageOut]:
-        """List recent chat messages."""
-        clauses: List[str] = []
-        params: List[Any] = []
+        """List chat messages ordered chronologically."""
+        stmt = select(chat_messages_table)
         if scope:
-            clauses.append("scope = ?")
-            params.append(scope)
+            stmt = stmt.where(chat_messages_table.c.scope == scope)
         if email_id:
-            clauses.append("email_id = ?")
-            params.append(email_id)
-        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(limit)
-        with get_connection(self.db_path) as conn:
-            rows = conn.execute(
-                f"SELECT * FROM chat_messages {where_sql} ORDER BY created_at DESC LIMIT ?",
-                tuple(params),
-            ).fetchall()
+            stmt = stmt.where(chat_messages_table.c.email_id == email_id)
+        if conversation_id:
+            stmt = stmt.where(chat_messages_table.c.conversation_id == conversation_id)
+        stmt = stmt.order_by(chat_messages_table.c.created_at.desc()).limit(limit)
+        with self.engine.connect() as conn:
+            rows = list(conn.execute(stmt).mappings())
             return [_row_to_chat_message(row) for row in reversed(rows)]
 
+    def rate_chat_message(
+        self, message_id: str, rating: int, notes: Optional[str] = None
+    ) -> Optional[ChatMessageOut]:
+        """Attach a quality rating (+1 / -1) and optional notes to an assistant turn."""
+        with self.engine.begin() as conn:
+            existing = conn.execute(
+                select(chat_messages_table.c.id).where(
+                    chat_messages_table.c.id == message_id
+                )
+            ).first()
+            if not existing:
+                return None
+            conn.execute(
+                update(chat_messages_table)
+                .where(chat_messages_table.c.id == message_id)
+                .values(quality_rating=rating, quality_notes=notes)
+            )
+            row = (
+                conn.execute(
+                    select(chat_messages_table).where(
+                        chat_messages_table.c.id == message_id
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_chat_message(row)
+
+    def list_conversations(
+        self, email_id: Optional[str] = None, limit: int = 50
+    ) -> List[ConversationOut]:
+        """Return conversation summaries with message counts, timing, and ratings."""
+        stmt = select(conversations_table)
+        if email_id:
+            stmt = stmt.where(conversations_table.c.email_id == email_id)
+        stmt = stmt.order_by(conversations_table.c.updated_at.desc()).limit(limit)
+        with self.engine.connect() as conn:
+            convs = list(conn.execute(stmt).mappings())
+            msgs = list(conn.execute(select(chat_messages_table)).mappings())
+
+        grouped: Dict[str, List[Any]] = {}
+        for m in msgs:
+            grouped.setdefault(m["conversation_id"], []).append(m)
+
+        results: List[ConversationOut] = []
+        for c in convs:
+            turns = grouped.get(c["id"], [])
+            latencies = [float(t["latency_ms"]) for t in turns if t["latency_ms"] is not None]
+            pos = sum(1 for t in turns if t["quality_rating"] == 1)
+            neg = sum(1 for t in turns if t["quality_rating"] == -1)
+            results.append(
+                ConversationOut(
+                    id=c["id"],
+                    scope=c["scope"],
+                    email_id=c["email_id"],
+                    title=c["title"],
+                    message_count=len(turns),
+                    avg_latency_ms=(
+                        round(sum(latencies) / len(latencies), 2) if latencies else None
+                    ),
+                    positive_ratings=pos,
+                    negative_ratings=neg,
+                    created_at=c["created_at"],
+                    updated_at=c["updated_at"],
+                )
+            )
+        return results
+
     def clear_chat_messages(self) -> None:
-        """Clear chat history."""
-        with get_connection(self.db_path) as conn:
-            conn.execute("DELETE FROM chat_messages")
+        """Clear chat history and conversation records."""
+        with self.engine.begin() as conn:
+            conn.execute(delete(chat_messages_table))
+            conn.execute(delete(conversations_table))
+
+    # ------------------------------------------------------------------
+    # LLM Execution Telemetry & Database Diagnostics
+    # ------------------------------------------------------------------
+    def record_llm_log(
+        self,
+        *,
+        request_id: Optional[str],
+        operation: str,
+        conversation_id: Optional[str],
+        email_id: Optional[str],
+        prompt_key: Optional[str],
+        prompt_hash: Optional[str],
+        provider: str,
+        model: str,
+        started_at: str,
+        completed_at: str,
+        latency_ms: float,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+        parse_valid: bool,
+        status: str,
+        error_message: Optional[str] = None,
+        output_preview: Optional[str] = None,
+    ) -> LLMExecutionLogOut:
+        """Persist an LLM telemetry record for quality & timing observation."""
+        log_id = f"log-{uuid.uuid4().hex[:12]}"
+        with self.engine.begin() as conn:
+            conn.execute(
+                insert(llm_execution_logs_table).values(
+                    id=log_id,
+                    request_id=request_id,
+                    operation=operation,
+                    conversation_id=conversation_id,
+                    email_id=email_id,
+                    prompt_key=prompt_key,
+                    prompt_hash=prompt_hash,
+                    provider=provider,
+                    model=model,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    latency_ms=round(latency_ms, 2),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
+                    parse_valid=1 if parse_valid else 0,
+                    status=status,
+                    error_message=error_message,
+                    output_preview=(output_preview or "")[:300] or None,
+                )
+            )
+            row = (
+                conn.execute(
+                    select(llm_execution_logs_table).where(
+                        llm_execution_logs_table.c.id == log_id
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            return _row_to_llm_log(row)
+
+    def list_llm_logs(
+        self,
+        operation: Optional[str] = None,
+        status: Optional[str] = None,
+        email_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[LLMExecutionLogOut]:
+        """List recent LLM execution trace logs with optional filters."""
+        stmt = select(llm_execution_logs_table)
+        if operation:
+            stmt = stmt.where(llm_execution_logs_table.c.operation == operation)
+        if status:
+            stmt = stmt.where(llm_execution_logs_table.c.status == status)
+        if email_id:
+            stmt = stmt.where(llm_execution_logs_table.c.email_id == email_id)
+        if conversation_id:
+            stmt = stmt.where(
+                llm_execution_logs_table.c.conversation_id == conversation_id
+            )
+        stmt = stmt.order_by(llm_execution_logs_table.c.started_at.desc()).limit(limit)
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).mappings()
+            return [_row_to_llm_log(row) for row in rows]
+
+    def get_observability_metrics(self) -> ObservabilityMetricsOut:
+        """Compute aggregate latency, token, reliability, and quality scores."""
+        with self.engine.connect() as conn:
+            logs = list(conn.execute(select(llm_execution_logs_table)).mappings())
+            conv_count = int(
+                conn.execute(select(func.count()).select_from(conversations_table)).scalar()
+                or 0
+            )
+            ratings = list(
+                conn.execute(
+                    select(chat_messages_table.c.quality_rating).where(
+                        chat_messages_table.c.quality_rating.is_not(None)
+                    )
+                ).scalars()
+            )
+
+        total = len(logs)
+        success_cnt = sum(1 for l in logs if l["status"] == "success")
+        error_cnt = total - success_cnt
+        latencies = [float(l["latency_ms"]) for l in logs]
+        tokens = sum(int(l["total_tokens"] or 0) for l in logs)
+        parse_valid_cnt = sum(1 for l in logs if l["parse_valid"])
+
+        pos = sum(1 for r in ratings if r == 1)
+        neg = sum(1 for r in ratings if r == -1)
+        rated = len(ratings)
+
+        by_op_map: Dict[str, List[Any]] = {}
+        for l in logs:
+            by_op_map.setdefault(l["operation"], []).append(l)
+
+        by_operation = []
+        for op, entries in sorted(by_op_map.items()):
+            op_lats = [float(e["latency_ms"]) for e in entries]
+            op_succ = sum(1 for e in entries if e["status"] == "success")
+            by_operation.append(
+                OperationStatsOut(
+                    operation=op,
+                    count=len(entries),
+                    success_count=op_succ,
+                    error_count=len(entries) - op_succ,
+                    avg_latency_ms=round(sum(op_lats) / len(op_lats), 2),
+                    p95_latency_ms=_percentile(op_lats, 95),
+                    total_tokens=sum(int(e["total_tokens"] or 0) for e in entries),
+                )
+            )
+
+        return ObservabilityMetricsOut(
+            total_calls=total,
+            success_count=success_cnt,
+            error_count=error_cnt,
+            success_rate_pct=round((success_cnt / total) * 100.0, 1) if total else 100.0,
+            avg_latency_ms=round(sum(latencies) / total, 2) if total else 0.0,
+            p95_latency_ms=_percentile(latencies, 95),
+            total_tokens=tokens,
+            parse_valid_rate_pct=(
+                round((parse_valid_cnt / total) * 100.0, 1) if total else 100.0
+            ),
+            total_conversations=conv_count,
+            rated_messages=rated,
+            positive_ratings=pos,
+            negative_ratings=neg,
+            approval_rate_pct=round((pos / rated) * 100.0, 1) if rated else None,
+            by_operation=by_operation,
+        )
 
     def get_counts(self) -> Dict[str, int]:
-        """Return counts for healthcheck."""
-        with get_connection(self.db_path) as conn:
-            email_count = conn.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
-            prompt_count = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
-            draft_count = conn.execute("SELECT COUNT(*) FROM drafts").fetchone()[0]
-        return {
-            "email_count": int(email_count),
-            "prompt_count": int(prompt_count),
-            "draft_count": int(draft_count),
+        """Return row counts across all core and observability tables."""
+        tables = {
+            "email_count": emails_table,
+            "prompt_count": prompts_table,
+            "draft_count": drafts_table,
+            "conversation_count": conversations_table,
+            "log_count": llm_execution_logs_table,
         }
+        counts: Dict[str, int] = {}
+        with self.engine.connect() as conn:
+            for key, tbl in tables.items():
+                counts[key] = int(
+                    conn.execute(select(func.count()).select_from(tbl)).scalar() or 0
+                )
+        return counts
+
+    def get_db_status(self) -> DatabaseStatusOut:
+        """Run a live DB ping and collect table statistics."""
+        ping = ping_database(self.engine)
+        counts = self.get_counts()
+        with self.engine.connect() as conn:
+            msg_count = int(
+                conn.execute(
+                    select(func.count()).select_from(chat_messages_table)
+                ).scalar()
+                or 0
+            )
+        return DatabaseStatusOut(
+            status=ping["status"],
+            dialect=ping["dialect"],
+            wal_mode=ping["wal_mode"],
+            db_latency_ms=ping["db_latency_ms"],
+            pool=ping["pool"],
+            table_counts={
+                "emails": counts["email_count"],
+                "prompts": counts["prompt_count"],
+                "drafts": counts["draft_count"],
+                "conversations": counts["conversation_count"],
+                "chat_messages": msg_count,
+                "llm_execution_logs": counts["log_count"],
+            },
+        )

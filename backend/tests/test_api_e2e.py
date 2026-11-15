@@ -17,6 +17,8 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     db_file = tmp_path / "test_email_agent.db"
     settings = Settings(
         database_path=str(db_file),
+        database_url="",
+        log_file_path=str(tmp_path / "test_backend.log"),
         llm_provider="mock",
         llm_api_key="",
         gemini_api_key="",
@@ -31,8 +33,13 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
 def test_health_and_default_prompts_seeded(client: TestClient) -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
+    assert "X-Request-ID" in resp.headers
+    assert "X-Response-Time-Ms" in resp.headers
     body = resp.json()
     assert body["status"] == "ok"
+    assert body["db_status"] == "connected"
+    assert body["db_dialect"] == "sqlite"
+    assert body["db_latency_ms"] >= 0.0
     assert body["prompt_count"] == 3
     assert body["email_count"] == 0
 
@@ -238,6 +245,8 @@ def test_llm_error_handling_is_graceful(tmp_path: Path, monkeypatch: pytest.Monk
     """Verify upstream LLM failures never crash ingestion, chat, or draft endpoints."""
     settings = Settings(
         database_path=str(tmp_path / "err.db"),
+        database_url="",
+        log_file_path=str(tmp_path / "err_backend.log"),
         llm_provider="openai",
         llm_api_key="sk-invalid-test",
         llm_allow_mock_fallback=False,
@@ -271,3 +280,73 @@ def test_llm_error_handling_is_graceful(tmp_path: Path, monkeypatch: pytest.Monk
             json={"email_id": "email-001"},
         )
         assert draft_resp.status_code == 502
+
+
+def test_observability_db_status_conversations_timing_and_quality(client: TestClient) -> None:
+    """Verify DB connectivity probe, unique conversation_id logging, timing, and quality ratings."""
+    client.post("/api/inbox/load-mock")
+    proc = client.post("/api/inbox/process", json={"email_ids": ["email-001", "email-003"]}).json()
+    assert proc["duration_ms"] >= 0.0
+
+    # Start a conversation on email-003 and continue with the returned conversation_id
+    turn1 = client.post(
+        "/api/agent/chat",
+        json={"scope": "email", "email_id": "email-003", "query": "Summarize this email"},
+    ).json()
+    conv_id = turn1["conversation_id"]
+    assert conv_id.startswith("conv-")
+    assert turn1["latency_ms"] >= 0.0
+
+    turn2 = client.post(
+        "/api/agent/chat",
+        json={
+            "scope": "email",
+            "email_id": "email-003",
+            "conversation_id": conv_id,
+            "query": "What tasks do I need to do?",
+        },
+    ).json()
+    assert turn2["conversation_id"] == conv_id
+
+    # Rate turn1 positively and turn2 negatively
+    fb1 = client.post(
+        f"/api/observability/messages/{turn1['assistant_message']['id']}/feedback",
+        json={"rating": 1, "notes": "Accurate summary"},
+    )
+    assert fb1.status_code == 200
+    assert fb1.json()["quality_rating"] == 1
+
+    fb2 = client.post(
+        f"/api/observability/messages/{turn2['assistant_message']['id']}/feedback",
+        json={"rating": -1, "notes": "Missed formatting preference"},
+    )
+    assert fb2.status_code == 200
+
+    # Verify DB status endpoint
+    db_status = client.get("/api/observability/db-status").json()
+    assert db_status["status"] == "connected"
+    assert db_status["dialect"] == "sqlite"
+    assert db_status["wal_mode"].lower() == "wal"
+    assert db_status["table_counts"]["emails"] == 16
+    assert db_status["table_counts"]["conversations"] == 1
+    assert db_status["table_counts"]["chat_messages"] == 4
+    assert db_status["table_counts"]["llm_execution_logs"] >= 6
+
+    # Verify conversation list & filter by conversation_id / email_id
+    convs = client.get("/api/observability/conversations", params={"email_id": "email-003"}).json()
+    assert len(convs) == 1
+    assert convs[0]["id"] == conv_id
+    assert convs[0]["message_count"] == 4
+    assert convs[0]["positive_ratings"] == 1
+    assert convs[0]["negative_ratings"] == 1
+
+    logs = client.get("/api/observability/logs", params={"conversation_id": conv_id}).json()
+    assert len(logs) == 2
+    assert all(l["email_id"] == "email-003" and l["prompt_hash"] for l in logs)
+
+    metrics = client.get("/api/observability/metrics").json()
+    assert metrics["total_calls"] >= 6
+    assert metrics["rated_messages"] == 2
+    assert metrics["approval_rate_pct"] == 50.0
+    assert any(op["operation"] == "chat" for op in metrics["by_operation"])
+

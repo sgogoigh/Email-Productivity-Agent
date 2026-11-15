@@ -501,9 +501,18 @@ class LLMGateway:
             )
         return False
 
-    async def _call_chat_completion(
+    def active_provider_and_model(self) -> Tuple[str, str]:
+        """Return active provider and resolved model name for telemetry."""
+        if self._should_use_mock():
+            return "mock", "prompt-aware-mock-v1"
+        provider = self.settings.resolved_llm_provider
+        if provider == "gemini":
+            return provider, (self.settings.llm_model.strip() or "gemini-2.5-flash")
+        return provider, (self.settings.llm_model.strip() or "gpt-4o-mini")
+
+    async def _call_chat_completion_with_usage(
         self, system_prompt: str, user_prompt: str, expect_json: bool = False
-    ) -> str:
+    ) -> Tuple[str, Dict[str, Any]]:
         provider = self.settings.resolved_llm_provider
         api_key = self.settings.resolved_llm_api_key
         timeout = self.settings.llm_timeout_seconds
@@ -534,7 +543,17 @@ class LLMGateway:
                 if resp.status_code >= 400:
                     raise LLMServiceError(f"Upstream LLM HTTP {resp.status_code}: {resp.text[:250]}")
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                usage_raw = data.get("usage") or {}
+                in_tok = int(usage_raw.get("prompt_tokens") or 0)
+                out_tok = int(usage_raw.get("completion_tokens") or 0)
+                tot_tok = int(usage_raw.get("total_tokens") or (in_tok + out_tok))
+                return data["choices"][0]["message"]["content"], {
+                    "provider": provider,
+                    "model": str(data.get("model") or model),
+                    "input_tokens": in_tok,
+                    "output_tokens": out_tok,
+                    "total_tokens": tot_tok,
+                }
 
         if provider == "gemini":
             model = self.settings.llm_model.strip() or "gemini-2.5-flash"
@@ -554,17 +573,42 @@ class LLMGateway:
                 if resp.status_code >= 400:
                     raise LLMServiceError(f"Gemini HTTP {resp.status_code}: {resp.text[:250]}")
                 data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                usage_meta = data.get("usageMetadata") or {}
+                in_tok = int(usage_meta.get("promptTokenCount") or 0)
+                out_tok = int(usage_meta.get("candidatesTokenCount") or 0)
+                tot_tok = int(usage_meta.get("totalTokenCount") or (in_tok + out_tok))
+                return data["candidates"][0]["content"]["parts"][0]["text"], {
+                    "provider": provider,
+                    "model": str(data.get("modelVersion") or model),
+                    "input_tokens": in_tok,
+                    "output_tokens": out_tok,
+                    "total_tokens": tot_tok,
+                }
 
         raise LLMServiceError(f"Unsupported LLM provider: {provider}")
 
+    async def _call_chat_completion(
+        self, system_prompt: str, user_prompt: str, expect_json: bool = False
+    ) -> str:
+        text, _ = await self._call_chat_completion_with_usage(
+            system_prompt, user_prompt, expect_json=expect_json
+        )
+        return text
+
     async def categorize_email(
         self, email: EmailOut, prompt_template: str
-    ) -> Tuple[str, str, str]:
-        """Run stored categorization prompt on a single email."""
+    ) -> Tuple[str, str, str, Dict[str, Any]]:
+        """Run stored categorization prompt on a single email with usage metadata."""
         if self._should_use_mock():
             res = PromptAwareMockEngine.categorize(email, prompt_template)
-            return res["category"], res["urgency"], res["reason"]
+            return res["category"], res["urgency"], res["reason"], {
+                "provider": "mock",
+                "model": "prompt-aware-mock-v1",
+                "input_tokens": max(1, len(email.body) // 4),
+                "output_tokens": 24,
+                "total_tokens": max(1, len(email.body) // 4) + 24,
+                "parse_valid": True,
+            }
 
         system = (
             "You are an email categorization assistant. Strictly follow the user's "
@@ -575,20 +619,30 @@ class LLMGateway:
             f"EMAIL:\nFrom: {email.sender} <{email.sender_email}>\n"
             f"Subject: {email.subject}\nTimestamp: {email.timestamp}\nBody:\n{email.body}"
         )
-        raw = await self._call_chat_completion(system, user, expect_json=True)
+        raw, usage = await self._call_chat_completion_with_usage(system, user, expect_json=True)
         parsed = extract_json_from_text(raw)
+        usage["parse_valid"] = True
         return (
             str(parsed.get("category") or "Important"),
             str(parsed.get("urgency") or "medium"),
             str(parsed.get("reason") or "Classified by LLM"),
+            usage,
         )
 
     async def extract_action_items(
         self, email: EmailOut, prompt_template: str
-    ) -> List[ActionItem]:
-        """Run stored action-item extraction prompt on a single email."""
+    ) -> Tuple[List[ActionItem], Dict[str, Any]]:
+        """Run stored action-item extraction prompt on a single email with usage metadata."""
         if self._should_use_mock():
-            return PromptAwareMockEngine.extract_action_items(email, prompt_template)
+            items = PromptAwareMockEngine.extract_action_items(email, prompt_template)
+            return items, {
+                "provider": "mock",
+                "model": "prompt-aware-mock-v1",
+                "input_tokens": max(1, len(email.body) // 4),
+                "output_tokens": 16 + len(items) * 12,
+                "total_tokens": max(1, len(email.body) // 4) + 16 + len(items) * 12,
+                "parse_valid": True,
+            }
 
         system = (
             "You are an action-item extraction assistant. Strictly follow the user's "
@@ -600,8 +654,9 @@ class LLMGateway:
             f"EMAIL:\nFrom: {email.sender} <{email.sender_email}>\n"
             f"Subject: {email.subject}\nBody:\n{email.body}"
         )
-        raw = await self._call_chat_completion(system, user, expect_json=True)
+        raw, usage = await self._call_chat_completion_with_usage(system, user, expect_json=True)
         parsed = extract_json_from_text(raw)
+        usage["parse_valid"] = True
         if isinstance(parsed, dict):
             if "tasks" in parsed and isinstance(parsed["tasks"], list):
                 parsed = parsed["tasks"]
@@ -610,7 +665,7 @@ class LLMGateway:
             else:
                 parsed = []
         if not isinstance(parsed, list):
-            return []
+            return [], usage
         items: List[ActionItem] = []
         for entry in parsed:
             if isinstance(entry, dict) and entry.get("task"):
@@ -620,7 +675,7 @@ class LLMGateway:
                         deadline=str(entry.get("deadline") or "Unspecified"),
                     )
                 )
-        return items
+        return items, usage
 
     async def generate_draft(
         self,
@@ -634,7 +689,7 @@ class LLMGateway:
     ) -> Dict[str, Any]:
         """Generate a safe draft (never sent) using the stored Auto-Reply prompt and thread."""
         if self._should_use_mock():
-            return PromptAwareMockEngine.generate_draft(
+            res = PromptAwareMockEngine.generate_draft(
                 email=email,
                 thread_emails=thread_emails,
                 auto_reply_prompt=auto_reply_prompt,
@@ -643,6 +698,15 @@ class LLMGateway:
                 recipient=recipient,
                 subject_hint=subject_hint,
             )
+            res["_usage"] = {
+                "provider": "mock",
+                "model": "prompt-aware-mock-v1",
+                "input_tokens": max(1, len(auto_reply_prompt) // 4),
+                "output_tokens": max(1, len(res["body"]) // 4),
+                "total_tokens": max(1, len(auto_reply_prompt) // 4) + max(1, len(res["body"]) // 4),
+                "parse_valid": True,
+            }
+            return res
 
         thread_text = "\n\n---\n\n".join(
             f"From: {e.sender} <{e.sender_email}> | {e.timestamp}\nSubject: {e.subject}\n{e.body}"
@@ -660,12 +724,14 @@ class LLMGateway:
             f"SUBJECT HINT: {subject_hint or (email.subject if email else 'None')}\n\n"
             f"EMAIL THREAD CONTEXT:\n{thread_text or 'New outbound email (no prior thread).'}"
         )
-        raw = await self._call_chat_completion(system, user, expect_json=True)
+        raw, usage = await self._call_chat_completion_with_usage(system, user, expect_json=True)
         parsed = extract_json_from_text(raw)
+        usage["parse_valid"] = True
         return {
             "subject": str(parsed.get("subject") or subject_hint or "Re: Follow-up"),
             "body": str(parsed.get("body") or ""),
             "suggested_followups": [str(x) for x in (parsed.get("suggested_followups") or [])],
+            "_usage": usage,
         }
 
     async def chat_with_agent(
@@ -680,7 +746,7 @@ class LLMGateway:
     ) -> Dict[str, Any]:
         """Execute a chat turn combining user query, email/inbox context, and stored prompts."""
         if self._should_use_mock():
-            return PromptAwareMockEngine.chat(
+            res = PromptAwareMockEngine.chat(
                 query=query,
                 scope=scope,
                 email=email,
@@ -689,6 +755,15 @@ class LLMGateway:
                 prompts=prompts,
                 tone=tone,
             )
+            res["_usage"] = {
+                "provider": "mock",
+                "model": "prompt-aware-mock-v1",
+                "input_tokens": max(1, len(query) // 4),
+                "output_tokens": max(1, len(res["content"]) // 4),
+                "total_tokens": max(1, len(query) // 4) + max(1, len(res["content"]) // 4),
+                "parse_valid": True,
+            }
+            return res
 
         prompt_bundle = "\n\n".join(
             f"[{p.key}] {p.name}:\n{p.template}" for p in prompts.values()
@@ -717,10 +792,12 @@ class LLMGateway:
             f"CONTEXT:\n{context_block}\n\n"
             f"USER QUERY:\n{query}"
         )
-        raw = await self._call_chat_completion(system, user, expect_json=True)
+        raw, usage = await self._call_chat_completion_with_usage(system, user, expect_json=True)
+        parse_valid = True
         try:
             parsed = extract_json_from_text(raw)
         except LLMServiceError:
+            parse_valid = False
             parsed = {
                 "content": raw.strip(),
                 "referenced_email_ids": [email.id] if email else [],
@@ -728,6 +805,7 @@ class LLMGateway:
                 "suggested_draft": None,
             }
 
+        usage["parse_valid"] = parse_valid
         raw_draft = parsed.get("suggested_draft")
         normalized_draft = (
             raw_draft
@@ -739,4 +817,5 @@ class LLMGateway:
             "referenced_email_ids": [str(x) for x in (parsed.get("referenced_email_ids") or [])],
             "prompts_used": [str(x) for x in (parsed.get("prompts_used") or list(prompts.keys()))],
             "suggested_draft": normalized_draft,
+            "_usage": usage,
         }
