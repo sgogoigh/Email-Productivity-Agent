@@ -1,0 +1,23 @@
+[
+  {
+    "key": "categorization",
+    "name": "Categorization Prompt",
+    "description": "Classifies incoming emails into user-defined categories and assigns urgency.",
+    "template": "Categorize emails into: Important, Newsletter, Spam, To-Do.\nTo-Do emails must include a direct request requiring user action. Respond with JSON containing category, urgency (high, medium, low), and reason.",
+    "is_default": true
+  },
+  {
+    "key": "action_item",
+    "name": "Action Item Extraction Prompt",
+    "description": "Extracts concrete tasks and deadlines from email content as structured JSON.",
+    "template": "Extract tasks from the email. Respond in JSON:\n[ { \"task\": \"...\", \"deadline\": \"...\" } ].\nIf the email contains no actionable tasks, return [].",
+    "is_default": true
+  },
+  {
+    "key": "auto_reply",
+    "name": "Auto-Reply Draft Prompt",
+    "description": "Guides the agent when generating reply drafts or new outreach messages.",
+    "template": "If an email is a meeting request, draft a polite reply asking for an agenda.\nFor task or project emails, acknowledge the request, confirm realistic next steps, and ask any clarifying questions. Never promise commitments without user review.",
+    "is_default": true
+  }
+]

@@ -1,0 +1,178 @@
+[
+  {
+    "id": "email-001",
+    "thread_id": "thread-q4-roadmap",
+    "sender": "Maya Lin",
+    "sender_email": "maya.lin@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Meeting Request: Q4 Product Roadmap Alignment",
+    "body": "Hi Alex,\n\nCould we schedule a 45-minute sync this Thursday at 2:00 PM to align on the Q4 product roadmap and finalize engineering capacity for the billing migration?\n\nLet me know if that slot works for you or suggest another time.\n\nBest,\nMaya",
+    "timestamp": "2026-11-15T09:15:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-002",
+    "thread_id": "thread-q4-roadmap",
+    "sender": "Maya Lin",
+    "sender_email": "maya.lin@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Re: Meeting Request: Q4 Product Roadmap Alignment",
+    "body": "Quick follow-up on my previous note — Finance also wants to join the first 15 minutes so we can lock down the cloud budget before Friday.\n\nCould you confirm by tomorrow 11:00 AM?\n\nThanks,\nMaya",
+    "timestamp": "2026-11-15T11:30:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-003",
+    "thread_id": "thread-security-audit",
+    "sender": "Devon Brooks",
+    "sender_email": "devon.brooks@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "URGENT Action Required: Rotate Staging API Keys & Sign SOC2 Attestation",
+    "body": "Hi Alex,\n\nOur annual SOC2 Type II audit window closes this week. Please complete two tasks before Wednesday 5:00 PM:\n1. Rotate the staging webhook signing keys in Vault.\n2. Sign the quarterly access control attestation form in Vanta.\n\nThis is a hard compliance deadline — let me know immediately if you hit any blockers.\n\nRegards,\nDevon",
+    "timestamp": "2026-11-15T08:40:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-004",
+    "thread_id": "thread-newsletter-ai",
+    "sender": "The Pragmatic AI Weekly",
+    "sender_email": "digest@pragmaticai.news",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Issue #142: Structured Outputs, Small Language Models & RAG Benchmarks",
+    "body": "Welcome to Issue #142 of The Pragmatic AI Weekly!\n\nTop stories this week:\n- Why JSON schema constrained decoding reduces agent retries by 63%.\n- Benchmarking hybrid BM25 + dense retrieval on enterprise support tickets.\n- Open-weights tool-calling models compared on latency and cost.\n\nRead the full edition online or manage your subscription preferences anytime.",
+    "timestamp": "2026-11-15T06:00:00Z",
+    "is_read": true
+  },
+  {
+    "id": "email-005",
+    "thread_id": "thread-spam-prize",
+    "sender": "Global Rewards Desk",
+    "sender_email": "claims@winner-bonus-portal.biz",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "CONGRATULATIONS! Claim Your $4,500 Executive Gift Card NOW",
+    "body": "Dear Valued Recipient,\n\nYou have been randomly selected to receive an exclusive $4,500 cash reward and VIP crypto airdrop! Click the verification link within 2 hours and enter your bank routing details to unlock instant payout.\n\nUnsubscribe | Claim Now",
+    "timestamp": "2026-11-15T05:12:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-006",
+    "thread_id": "thread-release-update",
+    "sender": "Priya Nair",
+    "sender_email": "priya.nair@acme-corp.io",
+    "recipient": "engineering@acme-corp.io",
+    "subject": "Project Update: Checkout Service v2.14 Deployed to Production",
+    "body": "Team,\n\nCheckout Service v2.14 rolled out smoothly to 100% of production traffic at 07:30 UTC.\n\nHighlights:\n- P95 latency dropped from 210ms to 138ms.\n- Idempotency retry errors are down to 0.01%.\n- Zero customer-facing incidents during canary.\n\nNo action needed from your side; dashboards will remain under active observation for 24 hours.\n\nCheers,\nPriya",
+    "timestamp": "2026-11-15T07:50:00Z",
+    "is_read": true
+  },
+  {
+    "id": "email-007",
+    "thread_id": "thread-pr-review",
+    "sender": "Marcus Vance",
+    "sender_email": "marcus.vance@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Please review PR #489: OAuth Token Refresh Race Condition Fix",
+    "body": "Hey Alex,\n\nI opened PR #489 to fix the token refresh race condition customers saw on mobile reconnects. Could you review the concurrency lock changes and leave approval comments by Tuesday EOD so we can include it in the Wednesday patch release?\n\nThanks!\nMarcus",
+    "timestamp": "2026-11-14T18:20:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-008",
+    "thread_id": "thread-design-sync",
+    "sender": "Elena Rostova",
+    "sender_email": "elena.rostova@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Invitation: Design Critique — New Inbox Triage Sidebar",
+    "body": "Hi Alex,\n\nWould you be available for a 30-minute meeting next Monday at 10:30 AM to review the high-fidelity prototypes for the new Inbox Triage sidebar?\n\nLet me know if you want anyone else from backend invited.\n\nBest,\nElena",
+    "timestamp": "2026-11-14T16:45:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-009",
+    "thread_id": "thread-newsletter-cloud",
+    "sender": "CloudNative Dispatch",
+    "sender_email": "newsletter@cloudnativedispatch.com",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Weekly Digest: Kubernetes 1.32 Highlights & Dockerfile Slimming Tips",
+    "body": "In this week's CloudNative Dispatch:\n1. Multi-stage Docker builds for Next.js and FastAPI microservices.\n2. Sidecar container lifecycle updates in Kubernetes 1.32.\n3. Observability cost reduction patterns with OpenTelemetry sampling.\n\nClick here to read the full articles or update your email digest settings.",
+    "timestamp": "2026-11-14T14:00:00Z",
+    "is_read": true
+  },
+  {
+    "id": "email-010",
+    "thread_id": "thread-client-escalation",
+    "sender": "Hannah Sterling",
+    "sender_email": "hannah.sterling@northstar-enterprise.com",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "URGENT: Enterprise SSO Login Failing for Northstar EU Region",
+    "body": "Hi Alex,\n\nStarting at 10:05 UTC today, roughly 40% of our EU employees are getting an invalid SAML assertion error when logging into Acme.\n\nPlease investigate the IdP certificate metadata on your side and send us a status update by 3:00 PM today. Our executive demo is tomorrow morning.\n\nThanks,\nHannah Sterling\nVP IT, Northstar Enterprise",
+    "timestamp": "2026-11-15T10:22:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-011",
+    "thread_id": "thread-spam-seo",
+    "sender": "Apex Growth Partners",
+    "sender_email": "outreach@rank1-backlinks-fast.xyz",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Guarantee #1 Google Ranking in 48 Hours — Limited Offer!",
+    "body": "Hello Business Owner,\n\nWe noticed your website is missing 10,000 high-authority backlinks! Reply today to lock in our 80% discount package and triple your organic traffic overnight. No contract required!\n\nTo opt out, reply STOP.",
+    "timestamp": "2026-11-14T12:10:00Z",
+    "is_read": true
+  },
+  {
+    "id": "email-012",
+    "thread_id": "thread-hr-expense",
+    "sender": "People Operations",
+    "sender_email": "peopleops@acme-corp.io",
+    "recipient": "all-staff@acme-corp.io",
+    "subject": "Reminder: Submit October Travel & Conference Expense Receipts",
+    "body": "Hi everyone,\n\nPlease upload all remaining October travel, lodging, and conference receipts in Expensify by Friday 6:00 PM so finance can close the monthly books on schedule.\n\nThank you,\nPeople Ops",
+    "timestamp": "2026-11-14T09:30:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-013",
+    "thread_id": "thread-project-analytics",
+    "sender": "Liam O'Connor",
+    "sender_email": "liam.oconnor@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Weekly Project Update: Data Warehouse Migration — Phase 2 Complete",
+    "body": "Hi Alex,\n\nHere is our weekly status update on the Snowflake to DuckDB/Parquet analytics migration:\n- Completed backfill for 18 months of event logs.\n- Automated reconciliation checks pass with 99.998% parity.\n- Next week: shadow-read validation for billing reports.\n\nJust keeping you in the loop — no immediate action required.\n\nBest,\nLiam",
+    "timestamp": "2026-11-13T17:15:00Z",
+    "is_read": true
+  },
+  {
+    "id": "email-014",
+    "thread_id": "thread-vendor-meeting",
+    "sender": "Rachel Kim",
+    "sender_email": "rachel.kim@vectorcloud.ai",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Coffee / Intro Call Request: VectorCloud Inference Pricing",
+    "body": "Hi Alex,\n\nI saw Acme is scaling its AI productivity workflows. Would you be open to a quick 20-minute call next Wednesday afternoon to discuss dedicated GPU inference tiers and latency SLAs?\n\nBest regards,\nRachel Kim",
+    "timestamp": "2026-11-13T15:05:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-015",
+    "thread_id": "thread-architecture-doc",
+    "sender": "Samira Patel",
+    "sender_email": "samira.patel@acme-corp.io",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "Action Needed: Finalize Disaster Recovery Runbook Before GameDay",
+    "body": "Hi Alex,\n\nBefore next week's Disaster Recovery GameDay, please update Section 4 (Database Failover Commands) of the DR Runbook and share the revised link with the SRE channel by Thursday 12:00 PM.\n\nLet me know if you need staging credentials.\n\nThanks,\nSamira",
+    "timestamp": "2026-11-13T11:45:00Z",
+    "is_read": false
+  },
+  {
+    "id": "email-016",
+    "thread_id": "thread-spam-invoice",
+    "sender": "Billing Verification Alert",
+    "sender_email": "support@account-suspend-notice-99.com",
+    "recipient": "alex.mercer@acme-corp.io",
+    "subject": "FINAL NOTICE: Your Cloud Account Will Be Terminated Today",
+    "body": "Your corporate payment failed! Click the secure link below to re-enter your credit card and password immediately to prevent permanent account deletion within 1 hour.",
+    "timestamp": "2026-11-13T04:20:00Z",
+    "is_read": false
+  }
+]
