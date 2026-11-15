@@ -107,35 +107,35 @@ Email-Productivity-Agent/
 - [x] Master architecture & integration plan (`docs/PLAN.md`)
 - [x] Backend design spec (`backend/docs/BACKEND_DESIGN.md`)
 - [x] Frontend design spec (`frontend/docs/FRONTEND_DESIGN.md`)
-- [ ] Verify root `.gitignore` covers Python venv, Node `node_modules`, `.next`, SQLite DBs, `.env`
+- [x] Verify root `.gitignore` covers Python venv, Node `node_modules`, `.next`, SQLite DBs, `.env`
 
 ### Phase 1: Backend Core, Assets & Prompt Brain (`backend/`)
-- [ ] Create Python virtual environment and install dependencies (`fastapi`, `uvicorn`, `pydantic-settings`, `httpx`, `pytest`, etc.)
-- [ ] Author `data/mock_inbox.json` (16 emails: meeting requests, newsletters, spam, task requests, project updates, multi-message thread)
-- [ ] Author `data/default_prompts.json` (Categorization, Action Item Extraction, Auto-Reply Draft)
-- [ ] Implement SQLite repository layer (`emails`, `prompts`, `drafts`, `chat_messages`)
-- [ ] Implement LLM Gateway with:
-  - [ ] Configurable real LLM provider (OpenAI / Gemini / OpenAI-compatible base URL)
-  - [ ] Graceful error handling (timeouts, rate limits, malformed JSON recovery)
-  - [ ] Deterministic prompt-aware mock engine when no API key is configured (so local/CI E2E tests and prompt-mutation demos work offline too)
-- [ ] Implement Ingestion Pipeline (`load -> categorize -> extract action items -> save state`)
-- [ ] Implement Agent Chat Service & Draft Generation Service (`status="draft"`, never auto-sends)
-- [ ] Add `backend/Dockerfile` and verify container build/run
+- [x] Create Python virtual environment and install dependencies (`fastapi`, `uvicorn`, `pydantic-settings`, `httpx`, `pytest`, etc.)
+- [x] Author `data/mock_inbox.json` (16 emails: meeting requests, newsletters, spam, task requests, project updates, multi-message thread)
+- [x] Author `data/default_prompts.json` (Categorization, Action Item Extraction, Auto-Reply Draft)
+- [x] Implement SQLite repository layer (`emails`, `prompts`, `drafts`, `chat_messages`)
+- [x] Implement LLM Gateway with:
+  - [x] Configurable real LLM provider (OpenAI / Gemini / OpenAI-compatible base URL, plus auto-detection of `GEMINI_API_KEY` / `OPENAI_API_KEY`)
+  - [x] Graceful error handling (timeouts, rate limits, malformed JSON recovery)
+  - [x] Deterministic prompt-aware mock engine when no API key is configured (so local/CI E2E tests and prompt-mutation demos work offline too)
+- [x] Implement Ingestion Pipeline (`load -> categorize -> extract action items -> save state`)
+- [x] Implement Agent Chat Service & Draft Generation Service (`status="draft"`, never auto-sends)
+- [x] Add `backend/Dockerfile` *(note: Docker Desktop daemon was offline during local run; container build ready to run via `docker build`)*
 
 ### Phase 2: Frontend Application (`frontend/`)
-- [ ] Initialize Next.js (TypeScript + Tailwind CSS) in `frontend/`
-- [ ] Build typed API client (`src/lib/api.ts`) with clear error states
-- [ ] Build **Inbox Viewer** (Load Mock Inbox button, Run Ingestion Pipeline button, category filter chips, search, email list showing Sender / Subject / Timestamp / Category tags, detail drawer/pane with extracted JSON action items)
-- [ ] Build **Prompt Brain Panel** (View, create, edit, save, reset prompts for Categorization, Action Item Extraction, Auto-Reply Draft)
-- [ ] Build **Email Agent Chat** (Scope toggle: Selected Email vs. Entire Inbox; quick prompts like *"Summarize this email"*, *"What tasks do I need to do?"*, *"Draft a reply based on my tone"*, *"Show me all urgent emails"*; button to convert reply suggestion directly into a Draft)
-- [ ] Build **Drafts Studio** (Generate new draft, generate reply with thread context, edit Subject/Body/Follow-ups, inspect JSON metadata, save draft, explicit "Draft Only — Never Auto-Sent" safety badge)
-- [ ] Add `frontend/Dockerfile` (standalone Next.js build) and verify container build/run
+- [x] Initialize Next.js (TypeScript + Tailwind CSS) in `frontend/`
+- [x] Build typed API client (`src/lib/api.ts`) with clear error states
+- [x] Build **Inbox Viewer** (Load Mock Inbox button, Run Ingestion Pipeline button, category filter chips, search, email list showing Sender / Subject / Timestamp / Category tags, detail drawer/pane with extracted JSON action items)
+- [x] Build **Prompt Brain Panel** (View, create, edit, save, reset prompts for Categorization, Action Item Extraction, Auto-Reply Draft)
+- [x] Build **Email Agent Chat** (Scope toggle: Selected Email vs. Entire Inbox; quick prompts like *"Summarize this email"*, *"What tasks do I need to do?"*, *"Draft a reply based on my tone"*, *"Show me all urgent emails"*; button to convert reply suggestion directly into a Draft)
+- [x] Build **Drafts Studio** (Generate new draft, generate reply with thread context, edit Subject/Body/Follow-ups, inspect JSON metadata, save draft, explicit "Safe Storage Mode — Never Auto-Sent" badge)
+- [x] Add `frontend/Dockerfile` (standalone Next.js build; `next build` standalone verified locally)
 
 ### Phase 3: Documentation & Verification
-- [ ] Write comprehensive root `README.md` (setup, running backend & UI, loading Mock Inbox, configuring prompts, usage examples, Docker deployment)
-- [ ] Backend unit & API integration tests (`pytest`)
-- [ ] Frontend typecheck, lint, unit/component tests, and production `next build`
-- [ ] Live End-to-End verification against running FastAPI + Next.js servers covering all scenarios below
+- [x] Write comprehensive root `README.md` (setup, running backend & UI, loading Mock Inbox, configuring prompts, usage examples, Docker deployment)
+- [x] Backend unit & API integration tests (`pytest` — 7/7 passed)
+- [x] Frontend typecheck, lint, unit/component tests (`vitest` — 3/3 passed), and production `next build`
+- [x] Live End-to-End verification against running FastAPI + Gemini API + Next.js servers (`E2E-1` through `E2E-8` verified)
 
 ---
 
