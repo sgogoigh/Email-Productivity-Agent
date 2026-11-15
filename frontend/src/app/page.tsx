@@ -11,7 +11,9 @@ import {
   Inbox,
   Loader2,
   MailCheck,
+  Moon,
   Sparkles,
+  Sun,
   X,
 } from "lucide-react";
 import { DraftsStudio } from "@/components/DraftsStudio";
@@ -59,6 +61,22 @@ export default function HomePage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
+  }, []);
+
+  const toggleTheme = () => {
+    const next: "light" | "dark" = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark", next === "dark");
+    try {
+      window.localStorage.setItem("theme", next);
+    } catch {
+      // Ignore storage failures
+    }
+  };
 
   const notifyStatus = (msg: string) => {
     setStatusBanner(msg);
@@ -345,24 +363,24 @@ export default function HomePage() {
   return (
     <div className="min-h-screen">
       {/* Top Navigation & Controls */}
-      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/85 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/85">
         <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 text-white shadow-md shadow-indigo-500/25">
               <MailCheck className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight text-slate-900">
+              <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
                 Email Productivity Agent
               </h1>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                 <span>Prompt-Driven Inbox Intelligence</span>
                 {health && (
                   <>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200/70">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-950/70 dark:text-indigo-300 dark:ring-indigo-800/70">
                       LLM: {health.llm_mode}
                     </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200/70">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200/70 dark:bg-emerald-950/70 dark:text-emerald-300 dark:ring-emerald-800/70">
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                       DB: {health.db_dialect} ({health.db_status} &middot;{" "}
                       {health.db_latency_ms}ms)
@@ -376,11 +394,24 @@ export default function HomePage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-amber-300"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
+            <button
+              type="button"
               disabled={busy}
               onClick={() => void handleLoadMockInbox()}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
             >
-              <Database className="h-3.5 w-3.5 text-slate-500" />
+              <Database className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
               Load Mock Inbox
             </button>
             <button
@@ -403,15 +434,15 @@ export default function HomePage() {
         <div className="mx-auto max-w-[1440px] px-4 pb-2.5 sm:px-6">
           <nav
             aria-label="Workspace navigation"
-            className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70"
+            className="inline-flex flex-wrap gap-1 rounded-xl bg-slate-100/90 p-1 ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-800"
           >
             <button
               type="button"
               onClick={() => setActiveTab("inbox")}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === "inbox"
-                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-indigo-300 dark:ring-white/10"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
             >
               <Inbox className="h-3.5 w-3.5" />
@@ -422,8 +453,8 @@ export default function HomePage() {
               onClick={() => setActiveTab("prompts")}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === "prompts"
-                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-indigo-300 dark:ring-white/10"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
             >
               <Brain className="h-3.5 w-3.5" />
@@ -434,8 +465,8 @@ export default function HomePage() {
               onClick={() => setActiveTab("drafts")}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === "drafts"
-                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-indigo-300 dark:ring-white/10"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
             >
               <FileEdit className="h-3.5 w-3.5" />
@@ -449,8 +480,8 @@ export default function HomePage() {
               }}
               className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
                 activeTab === "observability"
-                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-800 dark:text-indigo-300 dark:ring-white/10"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
               }`}
             >
               <Activity className="h-3.5 w-3.5" />
@@ -465,17 +496,17 @@ export default function HomePage() {
         {errorBanner && (
           <div
             role="alert"
-            className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-xs font-medium text-rose-800 shadow-sm"
+            className="flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-xs font-medium text-rose-800 shadow-sm dark:border-rose-900/70 dark:bg-rose-950/60 dark:text-rose-200"
           >
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
               <span>{errorBanner}</span>
             </div>
             <button
               type="button"
               onClick={() => setErrorBanner(null)}
               aria-label="Dismiss error"
-              className="rounded-lg p-1 hover:bg-rose-100"
+              className="rounded-lg p-1 hover:bg-rose-100 dark:hover:bg-rose-900/60"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -485,17 +516,17 @@ export default function HomePage() {
         {statusBanner && (
           <div
             role="status"
-            className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/95 px-4 py-2.5 text-xs font-medium text-emerald-800 shadow-sm"
+            className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/95 px-4 py-2.5 text-xs font-medium text-emerald-800 shadow-sm dark:border-emerald-900/70 dark:bg-emerald-950/60 dark:text-emerald-200"
           >
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
               <span>{statusBanner}</span>
             </div>
             <button
               type="button"
               onClick={() => setStatusBanner(null)}
               aria-label="Dismiss notification"
-              className="rounded-lg p-1 hover:bg-emerald-100"
+              className="rounded-lg p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/60"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -503,8 +534,8 @@ export default function HomePage() {
         )}
 
         {initialLoading ? (
-          <div className="flex min-h-[340px] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 text-sm text-slate-500 shadow-sm">
-            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+          <div className="flex min-h-[340px] flex-col items-center justify-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+            <Loader2 className="h-6 w-6 animate-spin text-indigo-600 dark:text-indigo-400" />
             <span>Connecting to Email Productivity Agent backend...</span>
           </div>
         ) : activeTab === "inbox" ? (
@@ -514,40 +545,40 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => setCategoryFilter("All")}
-                  className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 text-left shadow-sm transition hover:border-indigo-200"
+                  className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 text-left shadow-sm transition hover:border-indigo-200 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-indigo-700"
                 >
-                  <span className="text-[11px] font-medium text-slate-500">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Total Messages
                   </span>
-                  <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900 dark:text-white">
                     {emails.length}
                   </p>
                 </button>
                 <button
                   type="button"
                   onClick={() => setCategoryFilter("To-Do")}
-                  className="rounded-2xl border border-amber-200/80 bg-white/95 px-4 py-3 text-left shadow-sm transition hover:border-amber-300"
+                  className="rounded-2xl border border-amber-200/80 bg-white/95 px-4 py-3 text-left shadow-sm transition hover:border-amber-300 dark:border-amber-900/60 dark:bg-slate-900/90 dark:hover:border-amber-700"
                 >
-                  <span className="text-[11px] font-medium text-amber-700">
+                  <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">
                     Action / Urgent
                   </span>
-                  <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900">
+                  <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900 dark:text-white">
                     {todoCount}
                   </p>
                 </button>
-                <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm">
-                  <span className="text-[11px] font-medium text-slate-500">
+                <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Prompt Processed
                   </span>
-                  <p className="mt-0.5 text-xl font-bold tabular-nums text-indigo-700">
+                  <p className="mt-0.5 text-xl font-bold tabular-nums text-indigo-700 dark:text-indigo-400">
                     {processedCount}/{emails.length}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm">
-                  <span className="text-[11px] font-medium text-slate-500">
+                <div className="rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     Extracted Tasks
                   </span>
-                  <p className="mt-0.5 text-xl font-bold tabular-nums text-emerald-700">
+                  <p className="mt-0.5 text-xl font-bold tabular-nums text-emerald-700 dark:text-emerald-400">
                     {totalActionItems}
                   </p>
                 </div>

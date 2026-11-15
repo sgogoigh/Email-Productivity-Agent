@@ -109,19 +109,19 @@ export function EmailAgentChat({
   };
 
   return (
-    <section className="flex h-full min-h-[600px] lg:max-h-[820px] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm ring-1 ring-slate-900/[0.03]">
+    <section className="flex h-full min-h-[600px] lg:max-h-[820px] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-sm ring-1 ring-slate-900/[0.03] dark:border-slate-800 dark:bg-slate-900/90 dark:ring-white/[0.04]">
       {/* Copilot Header */}
-      <div className="space-y-3 border-b border-slate-100 bg-gradient-to-b from-indigo-50/50 to-white p-4">
+      <div className="space-y-3 border-b border-slate-100 bg-gradient-to-b from-indigo-50/50 to-white p-4 dark:border-slate-800 dark:from-indigo-950/35 dark:to-slate-900">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-500/25">
               <Bot className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 Email Agent Copilot
               </h2>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Context-aware Q&amp;A · Logged per turn
               </p>
             </div>
@@ -133,9 +133,9 @@ export function EmailAgentChat({
               disabled={busy}
               onClick={onNewConversation}
               title="Start a fresh conversation ID"
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
-              <MessageSquarePlus className="h-3 w-3 text-indigo-600" />
+              <MessageSquarePlus className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
               New
             </button>
             {messages.length > 0 && (
@@ -143,7 +143,7 @@ export function EmailAgentChat({
                 type="button"
                 disabled={busy}
                 onClick={() => void onClearHistory()}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-rose-900 dark:hover:bg-rose-950/60 dark:hover:text-rose-300"
               >
                 <Trash2 className="h-3 w-3" />
                 Clear
@@ -154,15 +154,15 @@ export function EmailAgentChat({
 
         {/* Scope & Tone Controls */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex rounded-xl bg-slate-100/90 p-1 text-xs">
+          <div className="inline-flex rounded-xl bg-slate-100/90 p-1 text-xs dark:bg-slate-800">
             <button
               type="button"
               disabled={!selectedEmail}
               onClick={() => setScope("email")}
               className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
                 effectiveScope === "email"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900 disabled:opacity-40"
+                  ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300"
+                  : "text-slate-600 hover:text-slate-900 disabled:opacity-40 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
               Selected Email
@@ -172,8 +172,8 @@ export function EmailAgentChat({
               onClick={() => setScope("inbox")}
               className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
                 effectiveScope === "inbox"
-                  ? "bg-white text-indigo-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-300"
+                  : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
               Entire Inbox
@@ -184,7 +184,7 @@ export function EmailAgentChat({
             aria-label="Reply tone"
             value={tone}
             onChange={(e) => setTone(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none"
+            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >
             <option value="polite and professional">Tone: Polite &amp; Professional</option>
             <option value="concise">Tone: Concise</option>
@@ -193,15 +193,15 @@ export function EmailAgentChat({
           </select>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-1.5 text-[11px] text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-1.5 text-[11px] text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
           <p className="min-w-0 truncate">
             Context:{" "}
             {effectiveScope === "email" && selectedEmail ? (
-              <span className="font-semibold text-indigo-700">
+              <span className="font-semibold text-indigo-700 dark:text-indigo-300">
                 {selectedEmail.id} &middot; {selectedEmail.subject}
               </span>
             ) : (
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
                 All loaded inbox emails
               </span>
             )}
@@ -211,11 +211,11 @@ export function EmailAgentChat({
               type="button"
               onClick={() => void handleCopyConvId()}
               title="Copy conversation ID"
-              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-600 ring-1 ring-slate-200 hover:text-indigo-700"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-600 ring-1 ring-slate-200 hover:text-indigo-700 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700 dark:hover:text-indigo-300"
             >
               <span>{activeConversationId}</span>
               {copiedConv ? (
-                <Check className="h-2.5 w-2.5 text-emerald-600" />
+                <Check className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400" />
               ) : (
                 <Copy className="h-2.5 w-2.5 text-slate-400" />
               )}
@@ -231,7 +231,7 @@ export function EmailAgentChat({
               type="button"
               disabled={busy}
               onClick={() => void submitQuery(chip)}
-              className="inline-flex items-center gap-1 rounded-full border border-indigo-200/80 bg-indigo-50/70 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100/80 disabled:opacity-50"
+              className="inline-flex items-center gap-1 rounded-full border border-indigo-200/80 bg-indigo-50/70 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-100/80 disabled:opacity-50 dark:border-indigo-800/70 dark:bg-indigo-950/60 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
             >
               <Sparkles className="h-2.5 w-2.5" />
               {chip}
@@ -241,16 +241,16 @@ export function EmailAgentChat({
       </div>
 
       {/* Chat Transcript */}
-      <div className="sleek-scroll flex-1 space-y-3.5 overflow-y-auto bg-slate-50/40 p-4">
+      <div className="sleek-scroll flex-1 space-y-3.5 overflow-y-auto bg-slate-50/40 p-4 dark:bg-slate-950/40">
         {visibleMessages.length === 0 ? (
           <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-4 text-center">
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/70 dark:text-indigo-400">
               <Bot className="h-5 w-5" />
             </div>
-            <p className="text-xs font-semibold text-slate-700">
+            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
               Ready to assist with your inbox
             </p>
-            <p className="mt-1 max-w-[260px] text-[11px] leading-relaxed text-slate-500">
+            <p className="mt-1 max-w-[260px] text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
               Click a quick prompt above or ask a question about the selected email or
               entire inbox.
             </p>
@@ -267,15 +267,15 @@ export function EmailAgentChat({
                 className={`flex gap-2.5 ${isUser ? "justify-end" : "justify-start"}`}
               >
                 {!isUser && (
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200/70">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200/70 dark:bg-indigo-950 dark:text-indigo-300 dark:ring-indigo-800/70">
                     <Bot className="h-3.5 w-3.5" />
                   </div>
                 )}
                 <div
                   className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed shadow-sm ${
                     isUser
-                      ? "rounded-tr-sm bg-gradient-to-br from-slate-900 to-slate-800 text-white"
-                      : "rounded-tl-sm border border-slate-200/90 bg-white text-slate-800"
+                      ? "rounded-tr-sm bg-gradient-to-br from-slate-900 to-slate-800 text-white dark:from-indigo-600 dark:to-violet-600"
+                      : "rounded-tl-sm border border-slate-200/90 bg-white text-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
                   }`}
                 >
                   {isUser ? (
@@ -285,11 +285,11 @@ export function EmailAgentChat({
                   )}
 
                   {!isUser && suggested && (
-                    <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3">
-                      <p className="text-[11px] font-semibold text-emerald-900">
+                    <div className="mt-3 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-3 dark:border-emerald-800/70 dark:bg-emerald-950/35">
+                      <p className="text-[11px] font-semibold text-emerald-900 dark:text-emerald-200">
                         Draft Ready: {suggested.subject}
                       </p>
-                      <p className="mt-1 line-clamp-2 text-[11px] text-emerald-800/80">
+                      <p className="mt-1 line-clamp-2 text-[11px] text-emerald-800/80 dark:text-emerald-300/80">
                         {suggested.body}
                       </p>
                       <button
@@ -307,10 +307,10 @@ export function EmailAgentChat({
                   )}
 
                   {!isUser && (
-                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 dark:border-slate-800">
                       <div className="flex flex-wrap items-center gap-1">
                         {msg.latency_ms != null && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-slate-600 ring-1 ring-slate-200/80">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-slate-600 ring-1 ring-slate-200/80 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700">
                             <Clock className="h-2.5 w-2.5 text-slate-400" />
                             {msg.latency_ms.toFixed(0)} ms
                           </span>
@@ -318,7 +318,7 @@ export function EmailAgentChat({
                         {promptsUsed.map((pk) => (
                           <span
                             key={pk}
-                            className="rounded-md bg-indigo-50/70 px-1.5 py-0.5 font-mono text-[10px] text-indigo-700 ring-1 ring-indigo-100"
+                            className="rounded-md bg-indigo-50/70 px-1.5 py-0.5 font-mono text-[10px] text-indigo-700 ring-1 ring-indigo-100 dark:bg-indigo-950/70 dark:text-indigo-300 dark:ring-indigo-800/60"
                           >
                             {pk}
                           </span>
@@ -333,8 +333,8 @@ export function EmailAgentChat({
                           onClick={() => void onRateMessage(msg.id, 1)}
                           className={`rounded-md p-1 transition ${
                             msg.quality_rating === 1
-                              ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
-                              : "text-slate-400 hover:bg-slate-100 hover:text-emerald-700"
+                              ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800"
+                              : "text-slate-400 hover:bg-slate-100 hover:text-emerald-700 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
                           }`}
                         >
                           <ThumbsUp className="h-3 w-3" />
@@ -346,8 +346,8 @@ export function EmailAgentChat({
                           onClick={() => void onRateMessage(msg.id, -1)}
                           className={`rounded-md p-1 transition ${
                             msg.quality_rating === -1
-                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200"
-                              : "text-slate-400 hover:bg-slate-100 hover:text-rose-700"
+                              ? "bg-rose-100 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:ring-rose-800"
+                              : "text-slate-400 hover:bg-slate-100 hover:text-rose-700 dark:hover:bg-slate-800 dark:hover:text-rose-400"
                           }`}
                         >
                           <ThumbsDown className="h-3 w-3" />
@@ -357,7 +357,7 @@ export function EmailAgentChat({
                   )}
                 </div>
                 {isUser && (
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-700">
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     <User className="h-3.5 w-3.5" />
                   </div>
                 )}
@@ -367,11 +367,11 @@ export function EmailAgentChat({
         )}
 
         {busy && (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             </div>
-            <span className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm">
+            <span className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
               Analyzing with Prompt Brain...
             </span>
           </div>
@@ -385,7 +385,7 @@ export function EmailAgentChat({
           e.preventDefault();
           void submitQuery(query);
         }}
-        className="flex items-center gap-2 border-t border-slate-100 bg-white p-3.5"
+        className="flex items-center gap-2 border-t border-slate-100 bg-white p-3.5 dark:border-slate-800 dark:bg-slate-900"
       >
         <input
           type="text"
@@ -393,7 +393,7 @@ export function EmailAgentChat({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ask about this email or your entire inbox..."
-          className="flex-1 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2 text-xs text-slate-900 transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/15"
+          className="flex-1 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2 text-xs text-slate-900 transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/15 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-950"
         />
         <button
           type="submit"

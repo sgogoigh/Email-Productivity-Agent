@@ -281,5 +281,9 @@ describe("Email Productivity Agent UI", () => {
       expect(screen.getByText("Email Agent Copilot")).toBeInTheDocument();
       expect(screen.getByText("Extracted Tasks")).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /Switch to dark mode/i }));
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(window.localStorage.getItem("theme")).toBe("dark");
   });
 });
