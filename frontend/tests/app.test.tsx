@@ -272,5 +272,11 @@ describe("Email Productivity Agent UI", () => {
       expect(screen.getByText("Database Connectivity")).toBeInTheDocument();
       expect(screen.getByText("conv-abc123")).toBeInTheDocument();
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Open$/i }));
+    await waitFor(() => {
+      expect(screen.getByText("Email Agent Copilot")).toBeInTheDocument();
+      expect(screen.getByText("Extracted Tasks")).toBeInTheDocument();
+    });
   });
 });
