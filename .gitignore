@@ -239,3 +239,5 @@ next-env.d.ts
 # Playwright / Frontend test artifacts
 playwright-report/
 test-results/
+!frontend/src/lib/
+*.tsbuildinfo
