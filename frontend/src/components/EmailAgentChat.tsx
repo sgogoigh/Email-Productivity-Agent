@@ -1,19 +1,33 @@
 "use client";
 
 import { useState } from "react";
-import { Bot, FilePlus2, Send, Trash2, User } from "lucide-react";
+import {
+  Bot,
+  Clock,
+  FilePlus2,
+  MessageSquarePlus,
+  Send,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  User,
+} from "lucide-react";
 import type { ChatMessage, EmailItem, SuggestedDraft } from "@/types";
 
 interface EmailAgentChatProps {
   selectedEmail: EmailItem | null;
   messages: ChatMessage[];
+  activeConversationId: string | null;
   busy: boolean;
   onSendChat: (payload: {
     query: string;
     scope: "email" | "inbox";
     email_id?: string | null;
+    conversation_id?: string | null;
     tone?: string;
   }) => Promise<void>;
+  onNewConversation: () => void;
+  onRateMessage: (messageId: string, rating: 1 | -1) => Promise<void>;
   onSaveSuggestedDraft: (
     draft: SuggestedDraft,
     emailId: string | null,
@@ -36,8 +50,11 @@ const QUICK_INBOX_PROMPTS = [
 export function EmailAgentChat({
   selectedEmail,
   messages,
+  activeConversationId,
   busy,
   onSendChat,
+  onNewConversation,
+  onRateMessage,
   onSaveSuggestedDraft,
   onClearHistory,
 }: EmailAgentChatProps) {
@@ -50,6 +67,10 @@ export function EmailAgentChat({
   const quickChips =
     effectiveScope === "email" ? QUICK_EMAIL_PROMPTS : QUICK_INBOX_PROMPTS;
 
+  const visibleMessages = activeConversationId
+    ? messages.filter((m) => m.conversation_id === activeConversationId)
+    : messages;
+
   const submitQuery = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -58,6 +79,7 @@ export function EmailAgentChat({
       query: trimmed,
       scope: effectiveScope,
       email_id: effectiveScope === "email" ? selectedEmail?.id ?? null : null,
+      conversation_id: activeConversationId,
       tone,
     });
   };
@@ -73,22 +95,34 @@ export function EmailAgentChat({
             <div>
               <h2 className="text-sm font-semibold text-slate-900">Email Agent Chat</h2>
               <p className="text-[11px] text-slate-500">
-                Uses your stored Prompt Brain instructions
+                Logged with unique conversation &amp; email IDs
               </p>
             </div>
           </div>
 
-          {messages.length > 0 && (
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               disabled={busy}
-              onClick={() => void onClearHistory()}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50"
+              onClick={onNewConversation}
+              title="Start a fresh conversation ID"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
             >
-              <Trash2 className="h-3 w-3" />
-              Clear
+              <MessageSquarePlus className="h-3 w-3" />
+              New
             </button>
-          )}
+            {messages.length > 0 && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void onClearHistory()}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Scope & Tone Controls */}
@@ -132,14 +166,23 @@ export function EmailAgentChat({
           </select>
         </div>
 
-        <p className="truncate text-[11px] text-slate-500">
-          Context:{" "}
-          {effectiveScope === "email" && selectedEmail ? (
-            <span className="font-medium text-indigo-700">{selectedEmail.subject}</span>
-          ) : (
-            <span className="font-medium text-slate-700">All loaded inbox emails</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+          <p className="truncate">
+            Context:{" "}
+            {effectiveScope === "email" && selectedEmail ? (
+              <span className="font-medium text-indigo-700">
+                {selectedEmail.id} &middot; {selectedEmail.subject}
+              </span>
+            ) : (
+              <span className="font-medium text-slate-700">All loaded inbox emails</span>
+            )}
+          </p>
+          {activeConversationId && (
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+              {activeConversationId}
+            </span>
           )}
-        </p>
+        </div>
 
         <div className="flex flex-wrap gap-1.5">
           {quickChips.map((chip) => (
@@ -158,13 +201,16 @@ export function EmailAgentChat({
 
       {/* Chat Transcript */}
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           <div className="flex h-full min-h-[200px] flex-col items-center justify-center text-center text-xs text-slate-400">
             <Bot className="mb-2 h-8 w-8 text-slate-300" />
-            <p>Ask the Email Agent to summarize, extract tasks, find urgent emails, or draft a reply.</p>
+            <p>
+              Ask the Email Agent to summarize, extract tasks, find urgent emails, or draft a
+              reply.
+            </p>
           </div>
         ) : (
-          messages.map((msg) => {
+          visibleMessages.map((msg) => {
             const isUser = msg.role === "user";
             const suggested = msg.metadata?.suggested_draft as SuggestedDraft | undefined;
             const promptsUsed = (msg.metadata?.prompts_used as string[] | undefined) ?? [];
@@ -188,16 +234,53 @@ export function EmailAgentChat({
                 >
                   <div className="whitespace-pre-wrap">{msg.content}</div>
 
-                  {!isUser && promptsUsed.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {promptsUsed.map((pk) => (
-                        <span
-                          key={pk}
-                          className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 ring-1 ring-slate-200"
+                  {!isUser && (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/70 pt-2">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {msg.latency_ms != null && (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-600 ring-1 ring-slate-200">
+                            <Clock className="h-2.5 w-2.5" />
+                            {msg.latency_ms.toFixed(0)} ms
+                          </span>
+                        )}
+                        {promptsUsed.map((pk) => (
+                          <span
+                            key={pk}
+                            className="rounded bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 ring-1 ring-slate-200"
+                          >
+                            {pk}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          aria-label="Rate response helpful"
+                          onClick={() => void onRateMessage(msg.id, 1)}
+                          className={`rounded p-1 transition ${
+                            msg.quality_rating === 1
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                          }`}
                         >
-                          prompt:{pk}
-                        </span>
-                      ))}
+                          <ThumbsUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          aria-label="Rate response unhelpful"
+                          onClick={() => void onRateMessage(msg.id, -1)}
+                          className={`rounded p-1 transition ${
+                            msg.quality_rating === -1
+                              ? "bg-rose-100 text-rose-700"
+                              : "text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                          }`}
+                        >
+                          <ThumbsDown className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -208,7 +291,7 @@ export function EmailAgentChat({
                       onClick={() =>
                         void onSaveSuggestedDraft(suggested, msg.email_id ?? null)
                       }
-                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       <FilePlus2 className="h-3.5 w-3.5" />
                       Save as Draft (Not Sent)

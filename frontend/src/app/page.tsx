@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  Activity,
   AlertCircle,
   Brain,
   CheckCircle2,
@@ -16,19 +17,24 @@ import {
 import { DraftsStudio } from "@/components/DraftsStudio";
 import { EmailAgentChat } from "@/components/EmailAgentChat";
 import { InboxViewer } from "@/components/InboxViewer";
+import { ObservabilityPanel } from "@/components/ObservabilityPanel";
 import { PromptBrainPanel } from "@/components/PromptBrainPanel";
 import { api } from "@/lib/api";
 import type {
   ChatMessage,
+  ConversationSummary,
+  DatabaseStatus,
   DraftItem,
   EmailDetail,
   EmailItem,
   HealthStatus,
+  LLMExecutionLog,
+  ObservabilityMetrics,
   PromptConfig,
   SuggestedDraft,
 } from "@/types";
 
-type ActiveTab = "inbox" | "prompts" | "drafts";
+type ActiveTab = "inbox" | "prompts" | "drafts" | "observability";
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("inbox");
@@ -40,6 +46,12 @@ export default function HomePage() {
   const [drafts, setDrafts] = useState<DraftItem[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+
+  const [dbStatus, setDbStatus] = useState<DatabaseStatus | null>(null);
+  const [obsMetrics, setObsMetrics] = useState<ObservabilityMetrics | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [execLogs, setExecLogs] = useState<LLMExecutionLog[]>([]);
 
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -64,6 +76,19 @@ export default function HomePage() {
     } catch {
       setSelectedDetail(null);
     }
+  }, []);
+
+  const refreshObservability = useCallback(async () => {
+    const [db, met, convs, logs] = await Promise.all([
+      api.getDbStatus(),
+      api.getObservabilityMetrics(),
+      api.listConversations(),
+      api.listExecutionLogs({ limit: 150 }),
+    ]);
+    setDbStatus(db);
+    setObsMetrics(met);
+    setConversations(convs);
+    setExecLogs(logs);
   }, []);
 
   const refreshAll = useCallback(async () => {
@@ -91,6 +116,7 @@ export default function HomePage() {
     (async () => {
       try {
         await refreshAll();
+        await refreshObservability();
       } catch (err) {
         if (active) {
           setErrorBanner(
@@ -106,7 +132,7 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [refreshAll]);
+  }, [refreshAll, refreshObservability]);
 
   useEffect(() => {
     void refreshDetail(selectedEmailId);
@@ -127,7 +153,7 @@ export default function HomePage() {
   const handleLoadMockInbox = () =>
     runAction(async () => {
       const res = await api.loadMockInbox();
-      await refreshAll();
+      await Promise.all([refreshAll(), refreshObservability()]);
       if (res.emails[0]) {
         setSelectedEmailId(res.emails[0].id);
         await refreshDetail(res.emails[0].id);
@@ -138,7 +164,7 @@ export default function HomePage() {
   const handleProcessInbox = () =>
     runAction(async () => {
       const res = await api.processInbox();
-      await refreshAll();
+      await Promise.all([refreshAll(), refreshObservability()]);
       await refreshDetail(selectedEmailId);
       setActiveTab("inbox");
       if (res.error_count > 0) {
@@ -147,7 +173,7 @@ export default function HomePage() {
         );
       } else {
         notifyStatus(
-          `Processed ${res.processed_count} emails using your stored Prompt Brain.`,
+          `Processed ${res.processed_count} emails in ${res.duration_ms.toFixed(0)} ms.`,
         );
       }
     });
@@ -159,7 +185,7 @@ export default function HomePage() {
         throw new Error("Uploaded JSON must be an array of email objects.");
       }
       const res = await api.uploadEmails(parsed, false);
-      await refreshAll();
+      await Promise.all([refreshAll(), refreshObservability()]);
       notifyStatus(`Ingested ${res.loaded_count} custom emails.`);
     });
 
@@ -200,14 +226,24 @@ export default function HomePage() {
     query: string;
     scope: "email" | "inbox";
     email_id?: string | null;
+    conversation_id?: string | null;
     tone?: string;
   }) =>
     runAction(async () => {
       const resp = await api.sendChat(payload);
+      setActiveConversationId(resp.conversation_id);
       setChatMessages((prev) => [...prev, resp.user_message, resp.assistant_message]);
+      await refreshObservability();
       if (resp.error) {
         setErrorBanner(`Agent encountered an LLM error: ${resp.error}`);
       }
+    });
+
+  const handleRateMessage = (messageId: string, rating: 1 | -1) =>
+    runAction(async () => {
+      const updated = await api.submitMessageFeedback(messageId, { rating });
+      setChatMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      await refreshObservability();
     });
 
   const handleSaveSuggestedDraft = (
@@ -232,6 +268,8 @@ export default function HomePage() {
     runAction(async () => {
       await api.clearChatHistory();
       setChatMessages([]);
+      setActiveConversationId(null);
+      await refreshObservability();
     });
 
   const handleGenerateReplyDraft = (emailId: string) =>
@@ -243,6 +281,7 @@ export default function HomePage() {
       setDrafts(await api.listDrafts());
       setSelectedDraftId(created.id);
       setActiveTab("drafts");
+      await refreshObservability();
       notifyStatus("Generated thread-aware auto-reply draft for review.");
     });
 
@@ -257,6 +296,7 @@ export default function HomePage() {
       const created = await api.generateDraft(payload);
       setDrafts(await api.listDrafts());
       setSelectedDraftId(created.id);
+      await refreshObservability();
       notifyStatus("Generated new draft (saved in draft mode only).");
     });
 
@@ -310,9 +350,15 @@ export default function HomePage() {
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                 <span>Prompt-Driven Inbox Intelligence</span>
                 {health && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-700">
-                    LLM: {health.llm_mode}
-                  </span>
+                  <>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-medium text-slate-700">
+                      LLM: {health.llm_mode}
+                    </span>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-medium text-emerald-700">
+                      DB: {health.db_dialect} ({health.db_status} &middot;{" "}
+                      {health.db_latency_ms}ms)
+                    </span>
+                  </>
                 )}
               </div>
             </div>
@@ -345,7 +391,7 @@ export default function HomePage() {
         </div>
 
         {/* Tab Bar */}
-        <div className="mx-auto flex max-w-[1440px] gap-1 px-4 sm:px-6">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap gap-1 px-4 sm:px-6">
           <button
             type="button"
             onClick={() => setActiveTab("inbox")}
@@ -381,6 +427,21 @@ export default function HomePage() {
           >
             <FileEdit className="h-3.5 w-3.5" />
             Drafts Studio ({drafts.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("observability");
+              void refreshObservability();
+            }}
+            className={`inline-flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-semibold transition ${
+              activeTab === "observability"
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5" />
+            Observability &amp; DB ({obsMetrics?.total_calls ?? 0})
           </button>
         </div>
       </header>
@@ -453,8 +514,11 @@ export default function HomePage() {
               <EmailAgentChat
                 selectedEmail={selectedEmail}
                 messages={chatMessages}
+                activeConversationId={activeConversationId}
                 busy={busy}
                 onSendChat={handleSendChat}
+                onNewConversation={() => setActiveConversationId(null)}
+                onRateMessage={handleRateMessage}
                 onSaveSuggestedDraft={handleSaveSuggestedDraft}
                 onClearHistory={handleClearChat}
               />
@@ -470,7 +534,7 @@ export default function HomePage() {
             onResetPrompts={handleResetPrompts}
             onProcessInbox={handleProcessInbox}
           />
-        ) : (
+        ) : activeTab === "drafts" ? (
           <DraftsStudio
             drafts={drafts}
             emails={emails}
@@ -481,6 +545,16 @@ export default function HomePage() {
             onCreateManualDraft={handleCreateManualDraft}
             onUpdateDraft={handleUpdateDraft}
             onDeleteDraft={handleDeleteDraft}
+          />
+        ) : (
+          <ObservabilityPanel
+            dbStatus={dbStatus}
+            metrics={obsMetrics}
+            conversations={conversations}
+            logs={execLogs}
+            busy={busy}
+            onRefresh={() => runAction(refreshObservability)}
+            onSelectConversation={(convId) => setActiveConversationId(convId)}
           />
         )}
       </main>

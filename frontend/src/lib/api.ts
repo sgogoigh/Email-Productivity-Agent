@@ -1,10 +1,14 @@
 import type {
   AgentChatResponse,
   ChatMessage,
+  ConversationSummary,
+  DatabaseStatus,
   DraftItem,
   EmailDetail,
   EmailItem,
   HealthStatus,
+  LLMExecutionLog,
+  ObservabilityMetrics,
   ProcessInboxResponse,
   PromptConfig,
 } from "@/types";
@@ -110,6 +114,7 @@ export const api = {
     query: string;
     scope: "email" | "inbox";
     email_id?: string | null;
+    conversation_id?: string | null;
     tone?: string;
   }) =>
     apiFetch<AgentChatResponse>("/api/agent/chat", {
@@ -117,10 +122,15 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  getChatHistory: (params?: { scope?: string; email_id?: string }) => {
+  getChatHistory: (params?: {
+    scope?: string;
+    email_id?: string;
+    conversation_id?: string;
+  }) => {
     const query = new URLSearchParams();
     if (params?.scope) query.set("scope", params.scope);
     if (params?.email_id) query.set("email_id", params.email_id);
+    if (params?.conversation_id) query.set("conversation_id", params.conversation_id);
     const qs = query.toString();
     return apiFetch<ChatMessage[]>(`/api/agent/history${qs ? `?${qs}` : ""}`);
   },
@@ -175,4 +185,42 @@ export const api = {
     apiFetch<void>(`/api/drafts/${encodeURIComponent(draftId)}`, {
       method: "DELETE",
     }),
+
+  getDbStatus: () => apiFetch<DatabaseStatus>("/api/observability/db-status"),
+
+  getObservabilityMetrics: () =>
+    apiFetch<ObservabilityMetrics>("/api/observability/metrics"),
+
+  listExecutionLogs: (params?: {
+    operation?: string;
+    status?: string;
+    email_id?: string;
+    conversation_id?: string;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.operation) query.set("operation", params.operation);
+    if (params?.status) query.set("status", params.status);
+    if (params?.email_id) query.set("email_id", params.email_id);
+    if (params?.conversation_id) query.set("conversation_id", params.conversation_id);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const qs = query.toString();
+    return apiFetch<LLMExecutionLog[]>(
+      `/api/observability/logs${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  listConversations: (emailId?: string) => {
+    const qs = emailId ? `?email_id=${encodeURIComponent(emailId)}` : "";
+    return apiFetch<ConversationSummary[]>(`/api/observability/conversations${qs}`);
+  },
+
+  submitMessageFeedback: (
+    messageId: string,
+    payload: { rating: 1 | -1; notes?: string },
+  ) =>
+    apiFetch<ChatMessage>(
+      `/api/observability/messages/${encodeURIComponent(messageId)}/feedback`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
 };
