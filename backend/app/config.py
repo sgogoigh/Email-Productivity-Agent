@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # LLM provider settings: mock | openai | gemini | openai_compatible
     llm_provider: str = "mock"
     llm_api_key: str = ""
+    gemini_api_key: str = ""
+    openai_api_key: str = ""
     llm_model: str = ""
     llm_base_url: str = ""
     llm_timeout_seconds: float = 30.0
@@ -47,12 +49,37 @@ class Settings(BaseSettings):
         return p if p.is_absolute() else (BACKEND_ROOT / p)
 
     @property
+    def resolved_llm_provider(self) -> str:
+        """Determine provider, auto-selecting gemini/openai when their API keys are present."""
+        explicit = self.llm_provider.strip().lower()
+        if explicit != "mock":
+            return explicit
+        if not self.llm_api_key.strip():
+            if self.gemini_api_key.strip():
+                return "gemini"
+            if self.openai_api_key.strip():
+                return "openai"
+        return explicit
+
+    @property
+    def resolved_llm_api_key(self) -> str:
+        """Return explicit LLM_API_KEY or fall back to provider-specific key."""
+        if self.llm_api_key.strip():
+            return self.llm_api_key.strip()
+        provider = self.resolved_llm_provider
+        if provider == "gemini" and self.gemini_api_key.strip():
+            return self.gemini_api_key.strip()
+        if provider == "openai" and self.openai_api_key.strip():
+            return self.openai_api_key.strip()
+        return ""
+
+    @property
     def effective_llm_mode(self) -> str:
         """Return the effective LLM mode considering API key availability."""
-        provider = self.llm_provider.strip().lower()
+        provider = self.resolved_llm_provider
         if provider == "mock":
             return "mock"
-        if not self.llm_api_key.strip():
+        if not self.resolved_llm_api_key:
             return "mock (fallback)" if self.llm_allow_mock_fallback else f"{provider} (unconfigured)"
         return provider
 

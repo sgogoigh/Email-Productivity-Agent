@@ -18,6 +18,9 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     settings = Settings(
         database_path=str(db_file),
         llm_provider="mock",
+        llm_api_key="",
+        gemini_api_key="",
+        openai_api_key="",
         llm_allow_mock_fallback=True,
     )
     app = create_app(custom_settings=settings)

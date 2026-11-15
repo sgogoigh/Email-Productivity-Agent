@@ -490,10 +490,10 @@ class LLMGateway:
         self.settings = settings
 
     def _should_use_mock(self) -> bool:
-        provider = self.settings.llm_provider.strip().lower()
+        provider = self.settings.resolved_llm_provider
         if provider == "mock":
             return True
-        if not self.settings.llm_api_key.strip():
+        if not self.settings.resolved_llm_api_key:
             if self.settings.llm_allow_mock_fallback:
                 return True
             raise LLMServiceError(
@@ -504,7 +504,8 @@ class LLMGateway:
     async def _call_chat_completion(
         self, system_prompt: str, user_prompt: str, expect_json: bool = False
     ) -> str:
-        provider = self.settings.llm_provider.strip().lower()
+        provider = self.settings.resolved_llm_provider
+        api_key = self.settings.resolved_llm_api_key
         timeout = self.settings.llm_timeout_seconds
 
         if provider in {"openai", "openai_compatible"}:
@@ -525,7 +526,7 @@ class LLMGateway:
             if expect_json:
                 payload["response_format"] = {"type": "json_object"}
             headers = {
-                "Authorization": f"Bearer {self.settings.llm_api_key}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -539,7 +540,7 @@ class LLMGateway:
             model = self.settings.llm_model.strip() or "gemini-2.5-flash"
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-                f"?key={self.settings.llm_api_key}"
+                f"?key={api_key}"
             )
             payload = {
                 "systemInstruction": {"parts": [{"text": system_prompt}]},
