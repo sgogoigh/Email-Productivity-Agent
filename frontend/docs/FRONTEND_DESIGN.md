@@ -15,10 +15,10 @@ The `frontend/` service is a standalone **Next.js (App Router + TypeScript + Tai
 A clean 3-column / tabbed responsive productivity workspace:
 
 - **Top Header Bar**:
-  - App title & active LLM mode badge (`Mock Engine` / `OpenAI` / `Gemini`)
+  - App title, active LLM mode badge (`Mock Engine` / `OpenAI` / `Gemini`), and live **DB Status** badge (`Connected` + dialect)
   - **Load Mock Inbox** button
   - **Process Inbox** (Ingestion Pipeline) button with progress/result feedback
-  - Primary navigation tabs: **Inbox & Agent**, **Prompt Brain**, **Drafts Studio** (plus quick inline access to Prompt Brain and Drafts from the main workspace)
+  - Primary navigation tabs: **Inbox & Agent**, **Prompt Brain**, **Drafts Studio**, **Observability & DB**
 - **Left Pane (Inbox List)**:
   - Search bar + Category filter pills (`All`, `Important`, `To-Do`, `Newsletter`, `Spam`, plus any custom categories produced by edited prompts)
   - Email cards displaying **Sender**, **Subject**, **Timestamp**, **Category tag badge**, and **Action-item count badge**
@@ -26,14 +26,19 @@ A clean 3-column / tabbed responsive productivity workspace:
   - Full sender/recipient/timestamp metadata, thread history (if part of a multi-message thread), formatted body
   - Extracted **Action Items** table/cards (`task`, `deadline`)
   - Quick CTA: **Generate Auto-Reply Draft**
-- **Right Pane (Email Agent Chat & Quick Draft Drawer)**:
+- **Right Pane (Email Agent Chat & Quality Feedback)**:
+  - Unique `conversation_id` session tracker with **New Conversation** button and conversation selector
   - Scope selector: `Selected Email` vs `Entire Inbox`
   - Quick prompt pills:
     - *"Summarize this email"*
     - *"What tasks do I need to do?"*
     - *"Draft a reply based on my tone"*
     - *"Show me all urgent emails"*
-  - Chat transcript + input box + **Save Reply as Draft** button when the assistant outputs a draft/reply
+  - Chat transcript displaying response timing (`ms`), `conversation_id` / `email_id` tags, **Thumbs Up / Thumbs Down** quality feedback controls, and **Save Reply as Draft** button when the assistant outputs a draft/reply
+- **Observability & DB Tab (`ObservabilityPanel`)**:
+  - Database connectivity diagnostics (`status`, `dialect`, `db_latency_ms`, WAL/pool details, table counts)
+  - Timing & quality KPIs (`avg` & `p95` latency, success rate, total tokens, feedback approval rate, breakdown by operation)
+  - Filterable **Conversations** & **LLM Execution Logs** tables keyed by `conversation_id`, `email_id`, `prompt_hash`, `latency_ms`, and `status`
 
 ---
 

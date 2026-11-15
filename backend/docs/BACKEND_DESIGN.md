@@ -11,9 +11,14 @@ The `backend/` service is a standalone **FastAPI** application responsible for:
 
 ---
 
-## 2. Database Schema (SQLite)
+## 2. Database Connectivity & Schema (SQLAlchemy 2.x: SQLite WAL + PostgreSQL)
 
-Persisted in `data/email_agent.db` (configurable via `DATABASE_PATH`):
+The backend uses **SQLAlchemy 2.x** configured via `DATABASE_URL`:
+- **Default (`sqlite:///data/email_agent.db`)**: Enables `PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA busy_timeout=5000`, and `PRAGMA foreign_keys=ON` for safe concurrent reads/writes with zero external setup.
+- **PostgreSQL (`postgresql+psycopg://...`)**: Uses SQLAlchemy connection pooling (`pool_pre_ping=True`, `pool_size`, `max_overflow`) for multi-container production deployments.
+- **Connectivity Probe**: `GET /api/health` and `GET /api/observability/db-status` execute `SELECT 1`, returning live status, dialect, WAL/pool metadata, `db_latency_ms`, and per-table row counts.
+
+### Tables
 
 - **`emails`**:
   - `id` (TEXT PK), `thread_id` (TEXT), `sender` (TEXT), `sender_email` (TEXT), `recipient` (TEXT), `subject` (TEXT), `body` (TEXT), `timestamp` (TEXT ISO-8601), `is_read` (INTEGER), `category` (TEXT nullable), `urgency` (TEXT nullable), `action_items_json` (TEXT JSON array of `{"task": str, "deadline": str}`), `processing_error` (TEXT nullable), `processed_at` (TEXT nullable)
@@ -21,8 +26,19 @@ Persisted in `data/email_agent.db` (configurable via `DATABASE_PATH`):
   - `key` (TEXT PK — e.g., `categorization`, `action_item`, `auto_reply`, or user slug), `name` (TEXT), `description` (TEXT), `template` (TEXT), `is_default` (INTEGER), `updated_at` (TEXT)
 - **`drafts`**:
   - `id` (TEXT PK), `email_id` (TEXT nullable FK -> `emails.id`), `subject` (TEXT), `body` (TEXT), `suggested_followups_json` (TEXT JSON array of strings), `metadata_json` (TEXT JSON object with `category`, `action_items`, `prompt_used`), `status` (TEXT default `'draft'` — enforced `'draft'` only), `created_at` (TEXT), `updated_at` (TEXT)
+- **`conversations`**:
+  - `id` (TEXT PK — unique `conversation_id`, e.g. `conv-...`), `scope` (TEXT `'email'` | `'inbox'`), `email_id` (TEXT nullable), `title` (TEXT), `created_at` (TEXT), `updated_at` (TEXT)
 - **`chat_messages`**:
-  - `id` (TEXT PK), `scope` (TEXT `'email'` | `'inbox'`), `email_id` (TEXT nullable), `role` (TEXT `'user'` | `'assistant'`), `content` (TEXT), `metadata_json` (TEXT), `created_at` (TEXT)
+  - `id` (TEXT PK), `conversation_id` (TEXT FK -> `conversations.id`), `scope` (TEXT `'email'` | `'inbox'`), `email_id` (TEXT nullable), `role` (TEXT `'user'` | `'assistant'`), `content` (TEXT), `latency_ms` (REAL nullable), `llm_mode` (TEXT nullable), `model_name` (TEXT nullable), `quality_rating` (INTEGER nullable: `1` or `-1`), `quality_notes` (TEXT nullable), `metadata_json` (TEXT), `created_at` (TEXT)
+- **`llm_execution_logs`**:
+  - `id` (TEXT PK), `request_id` (TEXT nullable), `operation` (TEXT `'categorize'` | `'extract_actions'` | `'chat'` | `'generate_draft'`), `conversation_id` (TEXT nullable), `email_id` (TEXT nullable), `prompt_key` (TEXT nullable), `prompt_hash` (TEXT nullable), `provider` (TEXT), `model` (TEXT), `started_at` (TEXT), `completed_at` (TEXT), `latency_ms` (REAL), `input_tokens` (INTEGER), `output_tokens` (INTEGER), `total_tokens` (INTEGER), `parse_valid` (INTEGER), `status` (TEXT `'success'` | `'error'`), `error_message` (TEXT nullable), `output_preview` (TEXT nullable)
+
+---
+
+## 2A. Structured Logging & Quality Timing
+
+- **HTTP Middleware**: Attaches `X-Request-ID` to every response and emits structured JSON logs (`timestamp`, `level`, `request_id`, `method`, `path`, `status_code`, `duration_ms`) to stdout and rotating file `logs/backend.log`.
+- **LLM Call Instrumentation**: Every LLM call measures `time.perf_counter()` duration (`latency_ms`), captures token usage (`usageMetadata` for Gemini / `usage` for OpenAI), hashes the active Prompt Brain template (`prompt_hash`), records JSON parse validity (`parse_valid`), and persists an audit row into `llm_execution_logs`.
 
 ---
 

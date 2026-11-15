@@ -81,23 +81,46 @@ Email-Productivity-Agent/
 
 | Domain | Endpoint | Method | Purpose |
 | :--- | :--- | :--- | :--- |
-| Health | `/api/health` | `GET` | Service status, DB connectivity, active LLM mode |
-| Inbox | `/api/inbox/load-mock` | `POST` | Load/reset mock inbox (16 emails) into SQLite |
+| Health | `/api/health` | `GET` | Service status, DB connectivity & latency, active LLM mode |
+| Inbox | `/api/inbox/load-mock` | `POST` | Load/reset mock inbox (16 emails) into DB |
 | Inbox | `/api/inbox/upload` | `POST` | Ingest custom JSON array of emails |
 | Inbox | `/api/inbox/emails` | `GET` | List emails with optional `category`, `search`, `processed` filters |
 | Inbox | `/api/inbox/emails/{id}` | `GET` | Full email detail, thread context, extracted actions, linked drafts |
-| Ingestion | `/api/inbox/process` | `POST` | Run Prompt Brain pipeline (categorize + extract actions + optional auto-draft) across all or selected email IDs |
+| Ingestion | `/api/inbox/process` | `POST` | Run Prompt Brain pipeline (categorize + extract actions) with per-call timing & logging |
 | Prompts | `/api/prompts` | `GET` | List all stored Prompt Brain configurations |
 | Prompts | `/api/prompts` | `POST` | Create a new custom prompt template |
 | Prompts | `/api/prompts/{key}` | `PUT` | Update an existing prompt template (`categorization`, `action_item`, `auto_reply`, or custom) |
 | Prompts | `/api/prompts/reset` | `POST` | Restore default prompt templates |
-| Agent Chat | `/api/agent/chat` | `POST` | Chat with Email Agent (scoped to `email_id` or full `inbox`), strictly injecting stored prompts |
-| Agent Chat | `/api/agent/history` | `GET` | Retrieve recent chat turns |
+| Agent Chat | `/api/agent/chat` | `POST` | Chat with Email Agent (scoped to `email_id` + `conversation_id` or `inbox`), logging timing & quality |
+| Agent Chat | `/api/agent/history` | `GET` | Retrieve chat turns filtered by `conversation_id`, `email_id`, or `scope` |
 | Drafts | `/api/drafts` | `GET` | List all saved drafts |
 | Drafts | `/api/drafts/generate` | `POST` | Generate a reply or new email draft using Auto-Reply Prompt + thread context |
 | Drafts | `/api/drafts` | `POST` | Save a manually composed draft |
 | Drafts | `/api/drafts/{id}` | `PUT` | Edit subject, body, suggested follow-ups, or metadata of an existing draft |
 | Drafts | `/api/drafts/{id}` | `DELETE` | Delete a draft |
+| Observability | `/api/observability/db-status` | `GET` | Live DB connectivity check (`SELECT 1`), dialect, pool info, ping `latency_ms`, table counts |
+| Observability | `/api/observability/metrics` | `GET` | Aggregated timing (`avg`/`p95` `latency_ms`), token usage, error rate, and quality scores |
+| Observability | `/api/observability/logs` | `GET` | Query `llm_execution_logs` by `conversation_id`, `email_id`, `operation`, `status` |
+| Observability | `/api/observability/conversations` | `GET` | List logged conversations with unique `conversation_id`, `email_id`, turn counts & avg latency |
+| Observability | `/api/observability/messages/{id}/feedback` | `POST` | Record quality rating (`1` / `-1`) and optional notes on any assistant turn |
+
+---
+
+## 3A. Database Selection & Observability Architecture
+
+### Chosen Database Strategy: **SQLite (WAL Mode) Default + PostgreSQL (`DATABASE_URL`) via SQLAlchemy 2.x**
+
+| Candidate | Fit for This Project | Decision |
+| :--- | :--- | :--- |
+| **SQLite (WAL Mode)** | Zero-config, single-file ACID database; `PRAGMA journal_mode=WAL` supports concurrent FastAPI reads/writes in single-container deployments and local dev. | **Selected Default** (`sqlite:///data/email_agent.db`) |
+| **PostgreSQL (via `DATABASE_URL`)** | Production multi-worker/horizontal scale with full connection pooling (`pool_pre_ping`), concurrent writes, and independent container deployment. | **Supported Production Target** (`postgresql+psycopg://...`) |
+| **DuckDB** | Analytical OLAP queries, weaker OLTP row-level concurrency for transactional chat/draft writes. | Not selected |
+| **MongoDB / NoSQL** | Flexible JSON docs, but requires a separate daemon locally and loses strict FK integrity between `conversations`, `emails`, `drafts`, and `llm_execution_logs`. | Not selected |
+
+### Timing, Quality & Conversation Logging Rules
+1. **Unique Identifiers:** Every chat session receives a UUID-backed `conversation_id` (`conv-...`) linked to `email_id` (when email-scoped). Every LLM invocation receives a `log_id` (`log-...`) plus the SHA-256 short `prompt_hash` of the active Prompt Brain template.
+2. **Timing Instrumentation:** All HTTP requests emit structured JSON logs with `X-Request-ID` and `duration_ms`. All LLM calls measure monotonic `time.perf_counter()` execution latency (`latency_ms`) plus `started_at` / `completed_at` UTC timestamps, and DB health probes measure `SELECT 1` `db_latency_ms`.
+3. **Quality Observation:** Tracks JSON schema parse validity (`parse_valid`), upstream error/fallback status, token counts (`input_tokens`, `output_tokens`, `total_tokens`), `avg`/`p95` latency per operation, and explicit user quality ratings (`+1` / `-1` + notes) per conversation turn.
 
 ---
 
